@@ -38,6 +38,17 @@ def setup():
             )
         """)
 
+        # tracks every invoice that has been processed so duplicates get caught across sessions
+        cursor.execute("""
+            CREATE TABLE processed_invoices (
+                invoice_number TEXT NOT NULL,
+                file_path      TEXT NOT NULL,
+                decision       TEXT,
+                processed_at   TEXT NOT NULL,
+                PRIMARY KEY (invoice_number, file_path)
+            )
+        """)
+
         cursor.executemany(
             "INSERT INTO items VALUES (?, ?)",
             [

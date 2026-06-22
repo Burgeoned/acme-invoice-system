@@ -127,6 +127,19 @@ Seed data:
 | GadgetX  | 5     | 750.00     |
 | FakeItem | 0     | 0.00       |
 
+### processed_invoices
+
+Tracks every invoice that has completed the pipeline. Used to catch duplicates across sessions — if a new file comes in claiming the same invoice number as something already processed, it gets flagged for review. Same file reprocessed is allowed (the user might be re-checking something), but a different file with the same invoice number is not.
+
+| column         | type    |
+|----------------|---------|
+| invoice_number | TEXT    |
+| file_path      | TEXT    |
+| decision       | TEXT    |
+| processed_at   | TEXT    |
+
+Primary key is (invoice_number, file_path) together so the same file can be reprocessed without conflict.
+
 ### vendors
 
 Approved supplier whitelist. Anything not in this table gets flagged.

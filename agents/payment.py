@@ -1,10 +1,13 @@
 import json
 import os
+import sqlite3
 import time
 import uuid
 from datetime import datetime
 
 from state import InvoiceState
+
+DB_PATH = "inventory.db"
 
 MAX_RETRIES = 3
 RETRY_DELAY = 2  # seconds between attempts
@@ -21,6 +24,25 @@ def mock_payment(vendor: str, amount: float) -> dict:
         "timestamp": datetime.utcnow().isoformat(),
         "status": "success",
     }
+
+
+def record_processed(state: InvoiceState):
+    if not state.invoice_number:
+        return
+    conn = None
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        conn.execute(
+            "INSERT OR IGNORE INTO processed_invoices (invoice_number, file_path, decision, processed_at) VALUES (?, ?, ?, ?)",
+            (state.invoice_number, state.file_path, state.decision, datetime.utcnow().isoformat())
+        )
+        conn.commit()
+    except sqlite3.Error as e:
+        # dont crash the pipeline if we cant record it, just log it
+        state.add_error(f"Could not record invoice in processed_invoices: {e}")
+    finally:
+        if conn:
+            conn.close()
 
 
 def write_audit_log(state: InvoiceState):
@@ -82,3 +104,4 @@ def run(state: InvoiceState):
 
     state.mark_stage_complete("payment")
     write_audit_log(state)
+    record_processed(state)

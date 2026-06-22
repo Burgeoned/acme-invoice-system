@@ -131,10 +131,33 @@ def run(state: InvoiceState, seen_invoice_numbers: set = None):
         state.halt("Foreign currency requires human review")
         return
 
-    # duplicate invoice number check, only relevant in batch mode
+    # duplicate check against db first, catches duplicates across sessions not just within a batch
+    if state.invoice_number:
+        cursor_temp = None
+        conn_temp = None
+        try:
+            conn_temp = get_db()
+            cursor_temp = conn_temp.cursor()
+            cursor_temp.execute(
+                "SELECT file_path FROM processed_invoices WHERE invoice_number = ? AND file_path != ?",
+                (state.invoice_number, state.file_path)
+            )
+            existing = cursor_temp.fetchone()
+            if existing:
+                state.add_flag("duplicate_invoice", f"Invoice number {state.invoice_number} was already processed from {existing['file_path']}")
+                state.halt("Duplicate invoice number")
+                return
+        except sqlite3.Error as e:
+            # if the table doesnt exist yet (old db) just fall through to the in-memory check
+            state.add_error(f"Could not check processed_invoices table: {e}")
+        finally:
+            if conn_temp:
+                conn_temp.close()
+
+    # in-memory check catches duplicates within the same batch run
     if seen_invoice_numbers is not None and state.invoice_number:
         if state.invoice_number in seen_invoice_numbers:
-            state.add_flag("duplicate_invoice", f"Invoice number {state.invoice_number} has already been processed, keeping latest file only")
+            state.add_flag("duplicate_invoice", f"Invoice number {state.invoice_number} already seen in this batch")
             state.halt("Duplicate invoice number")
             return
         seen_invoice_numbers.add(state.invoice_number)
