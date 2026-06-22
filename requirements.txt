@@ -1,5 +1,6 @@
 openai
 pdfplumber
 python-dotenv
+rapidfuzz
 streamlit
 pytest

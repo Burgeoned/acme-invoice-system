@@ -37,7 +37,13 @@ Checks the extracted data against SQLite. Runs these checks in order:
 
 1. **Foreign currency** — if currency is not USD, flag for human review and stop. We can't safely approve without knowing exchange rate policy.
 2. **Duplicate invoice number** — if the invoice number has been seen before, keep only the latest file (by modified date) and discard the earlier one.
-3. **Vendor check** — is the vendor in the approved list?
+3. **Vendor check** — three outcomes:
+   - Exact match (case-insensitive) -> approved, continue
+   - Known bad actor (in table, approved = 0) -> halt immediately, auto-reject
+   - No exact match but similarity >= 90% -> flag as possible match, halt for human review. Surfaces the close match so a reviewer can confirm rather than the system assuming. Catches typos and formatting differences without auto-approving a spoofed vendor.
+   - No match, no close match -> unknown vendor, halt for human review
+
+   Case-insensitive matching handles the common case ("widgets inc" vs "Widgets Inc."). Fuzzy matching handles formatting differences ("Widgets Incorporated" vs "Widgets Inc.") but is capped at a high threshold to avoid false positives — a bad actor named "Widgets lnc" (letter substitution) should not auto-match.
 4. **Item existence** — does each item exist in the catalog? "Unknown item" and "out of stock" are different failure modes and should produce different messages.
 5. **Stock check** — quantities are aggregated per item across all line items before checking stock. An invoice with the same item on three lines (e.g. volume discounts) gets the quantities summed first.
 6. **Price check** — invoice unit price is compared against the DB price. Variance within 15% passes. Over 15% adds a price flag to state; Grok decides in the approval stage. This threshold allows rush order markups and volume discounts to pass through to judgment rather than hard-rejecting.
@@ -109,6 +115,8 @@ Approved supplier whitelist. Anything not in this table gets flagged.
 
 This is an addition beyond the minimum schema. Item-level checks catch bad quantities and unknown SKUs, but won't catch a spoofed vendor. The vendors table adds a second signal that the baseline schema misses.
 
+Two distinct states: a vendor not in this table is unknown (never seen before, flag for review). A vendor in this table with approved = 0 is a known bad actor (explicit rejection). Fraudster LLC is seeded as approved = 0. NoProd Industries is not in the table — they're unknown, not confirmed bad.
+
 ---
 
 ## Design Decisions
@@ -152,7 +160,9 @@ Each invoice is checked against DB stock independently. In a real system you'd h
 - Same item multiple times on one invoice -> aggregate quantities before stock check
 - Negative quantity -> data integrity flag
 - Zero amount -> flagged as suspicious
-- Vendor not in whitelist -> unknown vendor flag
+- Vendor not in whitelist, no close match -> unknown vendor flag
+- Vendor not in whitelist but high similarity match (>=90%) -> possible match flag, surfaces the candidate for human review
+- Vendor in whitelist, approved = 0 -> known bad actor, immediate halt
 - Price variance >15% -> price flag, passed to Grok in approval
 
 **Approval**
