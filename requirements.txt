@@ -1,0 +1,5 @@
+openai
+pdfplumber
+python-dotenv
+streamlit
+pytest
