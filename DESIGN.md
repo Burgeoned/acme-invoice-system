@@ -64,7 +64,7 @@ If the first Grok call fails, default to rejected and log the error. If only the
 
 If Grok returns a decision value that isn't approved, rejected, or human_review, default to human_review and log the unexpected value.
 
-Three possible outcomes: approved, rejected, human_review.
+Four possible outcomes: approved, rejected, human_review, error. Error is reserved for system failures like file not found or DB errors — distinct from rejected so the AP team knows it needs a technical fix, not a business decision.
 
 **Flag types validation can raise:**
 - stock_mismatch: requested quantity exceeds available stock
@@ -238,7 +238,7 @@ Clicking any invoice row opens a detail view with full flags, Grok's reasoning, 
 
 **Manual approval:**
 
-AP staff can approve or reject human review invoices directly from the UI. Rejections require a short reason. On approval the system clears the halt, skips re-validation (the human saw the flags and made the call), runs payment, writes the audit log, and records in processed_invoices. On rejection it logs the reason and records it.
+AP staff can approve or reject human review invoices directly from the UI. Rejections require a short reason. On approval the system clears the halt, skips re-validation (the human saw the flags and made the call), runs payment, writes the audit log, and records in processed_invoices. On rejection a reason is required — the UI enforces this, and main.py raises a ValueError if an empty reason is passed programmatically.
 
 Session state is managed via Streamlit's st.session_state so batch results persist across interactions — clicking approve on one invoice doesn't lose the rest.
 

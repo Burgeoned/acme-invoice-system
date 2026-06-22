@@ -83,8 +83,10 @@ def manual_approve(state: InvoiceState) -> InvoiceState:
 
 
 def manual_reject(state: InvoiceState, reason: str) -> InvoiceState:
+    if not reason or not reason.strip():
+        raise ValueError("A reason is required when manually rejecting an invoice")
     state.decision = "rejected"
-    state.reasoning = f"Manually rejected by AP team: {reason}"
+    state.reasoning = f"Manually rejected by AP team: {reason.strip()}"
     payment.run(state)
     return state
 
@@ -93,6 +95,7 @@ def print_batch_summary(results: list[InvoiceState]):
     approved = [s for s in results if s.decision == "approved"]
     rejected = [s for s in results if s.decision == "rejected"]
     human = [s for s in results if s.decision == "human_review"]
+    errored = [s for s in results if s.decision == "error"]
     no_decision = [s for s in results if s.decision is None]
 
     # total dollar value that went through without any human involvement
@@ -104,6 +107,8 @@ def print_batch_summary(results: list[InvoiceState]):
     print(f"  Approved:     {len(approved)}")
     print(f"  Rejected:     {len(rejected)}")
     print(f"  Human review: {len(human)}")
+    if errored:
+        print(f"  Errors:       {len(errored)}  (check logs)")
     if no_decision:
         print(f"  No decision:  {len(no_decision)}  (check errors)")
     print(f"  Auto-processed value: ${auto_processed_value:,.2f}")

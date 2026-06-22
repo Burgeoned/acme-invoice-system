@@ -171,6 +171,10 @@ def run(state: InvoiceState):
         if state.vendor_status == "bad_actor":
             state.decision = "rejected"
             state.reasoning = state.halt_reason
+        elif state.errors and not state.vendor_status:
+            # halted due to a system error like file not found, not a business logic decision
+            state.decision = "error"
+            state.reasoning = state.halt_reason
         else:
             # unknown vendor, possible match, foreign currency all need human eyes
             state.decision = "human_review"
