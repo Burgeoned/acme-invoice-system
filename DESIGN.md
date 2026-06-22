@@ -165,6 +165,12 @@ Hard price matching rejects legitimate invoices — rush orders run at a markup,
 **Why snapshot stock in batch mode**
 Each invoice is checked against DB stock independently. In a real system you'd have stock reservations, but for a prototype that introduces non-determinism in tests — the first invoice to run would affect every one after it. Snapshot keeps the evals consistent.
 
+**Why sort batch files by modified date**
+Alphabetical sort is coincidentally correct for most test invoices but breaks down for revised invoices. INV-1004 and INV-1004_revised have the same invoice number — sorting by modified date means the revised file always comes second, gets caught by the duplicate check, and the correct version (the one that was processed first, which is the older original) is kept. If we wanted to keep the latest revision instead we'd reverse the sort and let the revised one process first.
+
+**Why run_single and run_batch are separate functions**
+The CLI uses them directly, but so does the UI. Exposing them as importable functions means the UI can call them in-process and get results back as Python objects rather than having to spawn a subprocess and parse stdout.
+
 ---
 
 ## Edge Cases
