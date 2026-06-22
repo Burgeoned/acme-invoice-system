@@ -109,7 +109,9 @@ def check_prices(state: InvoiceState, cursor):
 
 def check_data_integrity(state: InvoiceState):
     # catch obviously bad data before hitting the db
-    if state.total_amount is not None and state.total_amount < 0:
+    if state.total_amount is None:
+        state.add_flag("missing_total", "Invoice has no total amount")
+    elif state.total_amount < 0:
         state.add_flag("negative_total", f"Invoice total is negative: ${state.total_amount:.2f}")
 
     for li in state.line_items:
@@ -138,6 +140,9 @@ def run(state: InvoiceState, seen_invoice_numbers: set = None):
         seen_invoice_numbers.add(state.invoice_number)
 
     # data integrity before touching the db
+    if not state.line_items:
+        state.add_flag("no_line_items", "Invoice has no line items")
+
     check_data_integrity(state)
 
     conn = None

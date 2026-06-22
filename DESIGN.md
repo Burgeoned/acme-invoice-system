@@ -52,14 +52,37 @@ No LLM in validation. Every check is deterministic — it either matches the DB 
 
 ### Agent 3: Approval
 
-Two paths:
+Three paths:
 
-- Hard fraud flags present (unknown vendor + suspicious language, negative quantities, negative total) -> auto-reject, don't call Grok
-- Everything else -> Grok reasons through it
+- Already halted from validation (bad actor, unknown vendor, foreign currency) -> set decision based on halt reason, don't call Grok
+- Hard fraud flags (bad_actor, negative_quantity, negative_total) -> auto-reject immediately, no Grok call needed
+- Everything else -> Grok reasons through it with a self-critique loop
 
-The Grok call includes a self-correction loop: it generates an initial decision, then critiques that decision before finalizing. Invoices over $10K get extra scrutiny even if they look clean. Price flags from validation get passed to Grok with the variance amount so it can reason about whether the deviation is legitimate.
+The self-critique loop is two Grok calls. First call makes an initial decision with reasoning. Second call receives that decision and critiques it — asks whether it was too lenient, too strict, or missed anything — and can change the decision if the critique reveals a problem. Invoices over $10K get flagged as high value in the prompt so Grok applies extra scrutiny.
 
-If Grok times out or errors, the system defaults to reject and logs the error. Better to require a re-review than to silently approve something.
+If the first Grok call fails, default to rejected and log the error. If only the critique call fails, use the first decision rather than defaulting to rejected — we still have a valid answer, just unreviewed.
+
+If Grok returns a decision value that isn't approved, rejected, or human_review, default to human_review and log the unexpected value.
+
+Three possible outcomes: approved, rejected, human_review.
+
+**Flag types validation can raise:**
+- stock_mismatch: requested quantity exceeds available stock
+- out_of_stock: item exists in catalog but stock is zero
+- unknown_item: item not in catalog at all
+- price_variance: invoice price deviates more than 15% from DB price
+- unknown_vendor: vendor not in approved list
+- possible_vendor_match: vendor not found but closely matches a known vendor (>=90% similarity)
+- bad_actor: vendor is on the blocked list
+- foreign_currency: invoice is not in USD
+- duplicate_invoice: invoice number already processed in this batch
+- negative_quantity: line item has negative quantity
+- negative_total: invoice total is negative
+- missing_total: invoice has no total amount
+- no_line_items: invoice has no line items
+- missing_vendor: no vendor name on invoice
+- low_confidence: Grok flagged extraction confidence as low
+- malformed_line_item: a line item could not be parsed
 
 ### Agent 4: Payment
 
