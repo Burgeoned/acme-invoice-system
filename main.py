@@ -72,6 +72,23 @@ def run_batch() -> list[InvoiceState]:
     return results
 
 
+def manual_approve(state: InvoiceState) -> InvoiceState:
+    # AP person reviewed the flags and decided to approve, trust them and run payment
+    state.halted = False
+    state.halt_reason = None
+    state.decision = "approved"
+    state.reasoning = "Manually approved by AP team"
+    payment.run(state)
+    return state
+
+
+def manual_reject(state: InvoiceState, reason: str) -> InvoiceState:
+    state.decision = "rejected"
+    state.reasoning = f"Manually rejected by AP team: {reason}"
+    payment.run(state)
+    return state
+
+
 def print_batch_summary(results: list[InvoiceState]):
     approved = [s for s in results if s.decision == "approved"]
     rejected = [s for s in results if s.decision == "rejected"]

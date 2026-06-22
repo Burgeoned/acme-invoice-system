@@ -219,6 +219,31 @@ The CLI uses them directly, but so does the UI. Exposing them as importable func
 
 ---
 
+## UI
+
+Built in Streamlit. Designed for AP team members, not engineers — the goal is that someone non-technical can sit down and use it without training.
+
+**Layout:**
+
+Three metric cards at the top — approved (green), rejected (red), needs review (yellow). The needs review count is the number the AP person cares about most, so it's prominent.
+
+Below that, two sections:
+
+- Needs your attention — human review invoices front and center, this is their to-do list
+- Already handled — approved and rejected, collapsed by default, there if they want to audit
+
+Single invoice mode is a separate tab — file upload, run button, result shows immediately.
+
+Clicking any invoice row opens a detail view with full flags, Grok's reasoning, and payment result.
+
+**Manual approval:**
+
+AP staff can approve or reject human review invoices directly from the UI. Rejections require a short reason. On approval the system clears the halt, skips re-validation (the human saw the flags and made the call), runs payment, writes the audit log, and records in processed_invoices. On rejection it logs the reason and records it.
+
+Session state is managed via Streamlit's st.session_state so batch results persist across interactions — clicking approve on one invoice doesn't lose the rest.
+
+---
+
 ## Above and Beyond
 
 - Extraction confidence score on every ingestion — surfaces how reliable the parse was
@@ -227,6 +252,8 @@ The CLI uses them directly, but so does the UI. Exposing them as importable func
 - Price variance check with tolerance threshold — flags outliers for Grok rather than hard-rejecting
 - Batch mode + business metrics — run all invoices at once, see approval rate, fraud rate, and total dollar value auto-processed
 - Foreign currency detection — flags non-USD invoices for human review
+- Cross-session duplicate detection — processed_invoices table catches duplicate invoice numbers even across separate runs
+- Interactive UI with manual approval — AP team can action human review invoices without leaving the tool
 
 ---
 
