@@ -119,23 +119,23 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Acme invoice processing pipeline")
     # mutually exclusive means you can pass --invoice or --batch but not both
     group = parser.add_mutually_exclusive_group()
-    group.add_argument("--invoice", help="Path to a single invoice file")
+    group.add_argument("--invoice_path", help="Path to a single invoice file")
     group.add_argument("--batch", action="store_true", help="Process all invoices in data/invoices/")
     args = parser.parse_args()
 
-    if not args.invoice and not args.batch:
+    if not args.invoice_path and not args.batch:
         parser.print_help()
         raise SystemExit(1)
 
-    if args.invoice and not os.path.exists(args.invoice):
-        print(f"File not found: {args.invoice}")
+    if args.invoice_path and not os.path.exists(args.invoice_path):
+        print(f"File not found: {args.invoice_path}")
         raise SystemExit(1)
 
     print(f"\n{'Invoice':<20} {'Vendor':<26} {'Amount':<12} {'Decision':<14} {'Flags'}")
     print("-" * 90)
 
-    if args.invoice:
-        state = run_single(args.invoice)
+    if args.invoice_path:
+        state = run_single(args.invoice_path)
         print_invoice_result(state)
     else:
         results = run_batch()

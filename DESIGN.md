@@ -58,11 +58,15 @@ Three paths:
 - Hard fraud flags (bad_actor, negative_quantity, negative_total) -> auto-reject immediately, no Grok call needed
 - Everything else -> Grok reasons through it with a self-critique loop
 
-The self-critique loop is two Grok calls. First call makes an initial decision with reasoning. Second call receives that decision and critiques it — asks whether it was too lenient, too strict, or missed anything — and can change the decision if the critique reveals a problem. Invoices over $10K get flagged as high value in the prompt so Grok applies extra scrutiny.
+The approval agent runs a tool-calling loop before making a decision. Grok receives three tools and decides which to call based on what it sees:
 
-If the first Grok call fails, default to rejected and log the error. If only the critique call fails, use the first decision rather than defaulting to rejected — we still have a valid answer, just unreviewed.
+- lookup_vendor_history: queries processed_invoices for prior activity, useful for spotting a first-time vendor or one with a history of rejected invoices
+- get_item_price: queries the items table for the catalog price on a specific item, useful when a price_variance flag is present so Grok can see the actual delta rather than just knowing a flag exists
+- flag_for_escalation: lets Grok explicitly route to human review with a typed reason, rather than just returning "human_review" as a string
 
-If Grok returns a decision value that isn't approved, rejected, or human_review, default to human_review and log the unexpected value.
+Grok runs this loop up to 5 rounds, calling whatever tools it needs and receiving results back. Once it stops calling tools it returns its initial decision. A second Grok call then critiques that decision, the critique includes what tools were called and what they found. The model can change its decision if the critique reveals a problem.
+
+Invoices over $10K are flagged as high value in the prompt. If the first Grok call fails, default to rejected. If only the critique fails, use the first decision. If Grok returns a decision value outside the allowed set, default to human_review and log it.
 
 Four possible outcomes: approved, rejected, human_review, error. Error is reserved for system failures like file not found or DB errors — distinct from rejected so the AP team knows it needs a technical fix, not a business decision.
 
