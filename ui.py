@@ -1,6 +1,9 @@
-﻿import base64
+import base64
+import json
 import os
 import sqlite3
+import subprocess
+import sys
 import streamlit as st
 import streamlit.components.v1 as components
 
@@ -9,7 +12,7 @@ from state import InvoiceState
 
 st.set_page_config(
     page_title="Acme Invoice Review",
-    page_icon="ðŸ§¾",
+    page_icon="🧾",
     layout="wide",
 )
 
@@ -17,7 +20,6 @@ st.markdown("""
 <style>
     .block-container { padding-top: 1.5rem; max-width: 1200px; }
 
-    /* base button */
     div[data-testid="stButton"] button {
         border-radius: 6px !important;
         font-weight: 600 !important;
@@ -35,9 +37,6 @@ st.markdown("""
         box-shadow: 0 0px 1px rgba(0,0,0,0.1) !important;
     }
 
-    /* button colors applied via JS injection below â€” see inject_button_colors() */
-
-    /* metric cards */
     div[data-testid="metric-container"] {
         background: #f9fafb;
         border: 1px solid #e5e7eb;
@@ -45,21 +44,6 @@ st.markdown("""
         padding: 16px;
     }
 
-    /* already-handled table rows */
-    .handled-row {
-        display: grid;
-        grid-template-columns: 2fr 1fr 1fr;
-        align-items: center;
-        padding: 10px 4px;
-        border-bottom: 1px solid #f3f4f6;
-        font-size: 0.9rem;
-    }
-    .handled-row:last-child { border-bottom: none; }
-    .handled-vendor { font-weight: 600; color: #111; }
-    .handled-id { color: #9ca3af; font-size: 0.8rem; margin-top: 2px; }
-    .handled-amount { color: #374151; }
-
-    /* page header */
     .acme-header {
         display: flex;
         align-items: baseline;
@@ -72,43 +56,6 @@ st.markdown("""
     .acme-header span { color: #6b7280; font-size: 0.9rem; }
 </style>
 """, unsafe_allow_html=True)
-
-def inject_button_colors():
-    """
-    Colors buttons by their label text using JS via components.html.
-    components.html runs in its own iframe but window.parent.document
-    lets it reach the main Streamlit page. MutationObserver re-applies
-    after every Streamlit DOM update so colors survive rerenders.
-    """
-    components.html("""
-    <script>
-    function applyColors() {
-        const doc = window.parent.document;
-        doc.querySelectorAll('button').forEach(function(btn) {
-            const text = btn.innerText.trim();
-            if (['Approve', 'Run Batch', 'Run Invoice', 'Approve and process payment'].includes(text)) {
-                btn.style.setProperty('background-color', '#16a34a', 'important');
-                btn.style.setProperty('color', 'white', 'important');
-                btn.style.setProperty('border', 'none', 'important');
-            } else if (['Reject', 'Confirm rejection', 'Yes, reset'].includes(text)) {
-                btn.style.setProperty('background-color', '#dc2626', 'important');
-                btn.style.setProperty('color', 'white', 'important');
-                btn.style.setProperty('border', 'none', 'important');
-            } else if (text === 'Accept Revision') {
-                btn.style.setProperty('background-color', '#d97706', 'important');
-                btn.style.setProperty('color', 'white', 'important');
-                btn.style.setProperty('border', 'none', 'important');
-            }
-        });
-    }
-    applyColors();
-    setTimeout(applyColors, 150);
-    new MutationObserver(applyColors).observe(
-        window.parent.document.body,
-        { childList: true, subtree: true }
-    );
-    </script>
-    """, height=0)
 
 DECISION_COLORS = {
     "approved":     "#22c55e",
@@ -143,6 +90,46 @@ FLAG_PLAIN_ENGLISH = {
     "malformed_line_item":   "A line item could not be parsed",
 }
 
+# flags where the actual message is more useful than the generic label (contains item names etc.)
+ITEM_SPECIFIC_FLAGS = {"stock_mismatch", "out_of_stock", "unknown_item", "price_variance", "malformed_line_item"}
+
+
+def inject_button_colors():
+    """
+    Colors buttons by label text via JS. components.html runs in an iframe but
+    window.parent.document reaches the main Streamlit page. MutationObserver
+    re-applies colors after every Streamlit DOM update.
+    """
+    components.html("""
+    <script>
+    function applyColors() {
+        const doc = window.parent.document;
+        doc.querySelectorAll('button').forEach(function(btn) {
+            const text = btn.innerText.trim();
+            if (['Approve', 'Run Batch', 'Run Invoice', 'Approve and process payment'].includes(text)) {
+                btn.style.setProperty('background-color', '#16a34a', 'important');
+                btn.style.setProperty('color', 'white', 'important');
+                btn.style.setProperty('border', 'none', 'important');
+            } else if (['Reject', 'Confirm rejection', 'Yes, reset'].includes(text)) {
+                btn.style.setProperty('background-color', '#dc2626', 'important');
+                btn.style.setProperty('color', 'white', 'important');
+                btn.style.setProperty('border', 'none', 'important');
+            } else if (text === 'Accept Revision') {
+                btn.style.setProperty('background-color', '#d97706', 'important');
+                btn.style.setProperty('color', 'white', 'important');
+                btn.style.setProperty('border', 'none', 'important');
+            }
+        });
+    }
+    applyColors();
+    setTimeout(applyColors, 150);
+    new MutationObserver(applyColors).observe(
+        window.parent.document.body,
+        { childList: true, subtree: true }
+    );
+    </script>
+    """, height=0)
+
 
 def badge(decision: str) -> str:
     color = DECISION_COLORS.get(decision, "#6b7280")
@@ -151,6 +138,7 @@ def badge(decision: str) -> str:
 
 
 def flag_summary(state: InvoiceState) -> str:
+    """Return the highest-priority flag as a plain-English string for the card summary."""
     if not state.flags:
         return ""
     priority_order = [
@@ -167,7 +155,8 @@ def flag_summary(state: InvoiceState) -> str:
 
 
 def render_invoice_file(file_path: str, label: str = "Original invoice"):
-    st.markdown(f"**{label}**")
+    if label:
+        st.markdown(f"**{label}**")
     if not file_path or not os.path.exists(file_path):
         st.caption("File not available")
         return
@@ -191,14 +180,11 @@ def render_invoice_file(file_path: str, label: str = "Original invoice"):
 
 
 def _read_processed_amount(file_path: str) -> float | None:
-    """Best-effort: extract total amount from a processed invoice file for revision detection."""
+    """Best-effort: pull total amount from a processed invoice file for revision detection."""
     try:
-        ext = os.path.splitext(file_path)[1].lower()
-        with open(file_path, "r", encoding="utf-8", errors="replace") as f:
-            content = f.read()
-        if ext == ".json":
-            import json
-            data = json.loads(content)
+        if os.path.splitext(file_path)[1].lower() == ".json":
+            with open(file_path, "r", encoding="utf-8", errors="replace") as f:
+                data = json.loads(f.read())
             return float(data.get("total") or data.get("total_amount") or 0) or None
     except Exception:
         pass
@@ -206,6 +192,7 @@ def _read_processed_amount(file_path: str) -> float | None:
 
 
 def lookup_duplicate_source(invoice_number: str, current_file: str) -> dict | None:
+    """Return the prior processed record for this invoice number, if any."""
     try:
         conn = sqlite3.connect("inventory.db")
         row = conn.execute(
@@ -221,15 +208,13 @@ def lookup_duplicate_source(invoice_number: str, current_file: str) -> dict | No
 
 
 def show_line_items(state: InvoiceState):
-    if not state.line_items:
-        return
     for li in state.line_items:
         qty = int(li.quantity) if li.quantity == int(li.quantity) else li.quantity
         st.markdown(f"- {li.item} &nbsp; x{qty} &nbsp; ${li.unit_price:,.2f} ea &nbsp; ${li.total:,.2f}", unsafe_allow_html=True)
 
 
 def show_invoice_fields(state: InvoiceState):
-    """Extracted fields, flags, and AI reasoning. Left side of the detail panel."""
+    """Extracted fields, flags, and AI reasoning — left side of the detail panel."""
     st.markdown(f"**Invoice #:** {state.invoice_number or 'unknown'}")
     st.markdown(f"**Vendor:** {state.vendor or 'unknown'}")
     st.markdown(f"**Date:** {state.date or 'unknown'}")
@@ -245,9 +230,8 @@ def show_invoice_fields(state: InvoiceState):
     if state.flags:
         st.markdown("**Flags:**")
         for f in state.flags:
-            # item-specific flags have the actual item name in the message, use that over the generic label
-            ITEM_SPECIFIC = {"stock_mismatch", "out_of_stock", "unknown_item", "price_variance", "malformed_line_item"}
-            plain = f.message if f.type in ITEM_SPECIFIC else FLAG_PLAIN_ENGLISH.get(f.type, f.message)
+            plain = f.message if f.type in ITEM_SPECIFIC_FLAGS else FLAG_PLAIN_ENGLISH.get(f.type, f.message)
+
             if f.type == "duplicate_invoice" and state.invoice_number:
                 source = lookup_duplicate_source(state.invoice_number, state.file_path)
                 if source:
@@ -266,12 +250,11 @@ def show_invoice_fields(state: InvoiceState):
                             f"but amount differs: original ${orig_amount:,.2f} vs this ${state.total_amount:,.2f}. "
                             f"Compare both versions before deciding."
                         )
-                        # surface the right action based on what happened to the original
                         if source["decision"] == "approved":
                             st.error(
                                 "Payment was already sent for the original. "
                                 "Accepting this revision requires a manual adjustment with finance. "
-                                "do not approve here. Contact the vendor for a credit memo or supplemental invoice."
+                                "Do not approve here. Contact the vendor for a credit memo or supplemental invoice."
                             )
                             state._revision_blocked = True
                         else:
@@ -294,7 +277,7 @@ def show_invoice_fields(state: InvoiceState):
 
     if state.payment_result:
         pr = state.payment_result
-        st.success(f"Payment confirmed. Transaction {pr['transaction_id']} Â· ${pr['amount']:,.2f} to {pr['vendor']} at {pr['timestamp']}")
+        st.success(f"Payment confirmed. Transaction {pr['transaction_id']} · ${pr['amount']:,.2f} to {pr['vendor']} at {pr['timestamp']}")
 
     if state.errors:
         for e in state.errors:
@@ -309,7 +292,6 @@ def show_full_detail(state: InvoiceState):
     with col_left:
         show_invoice_fields(state)
     with col_right:
-        # if this is a duplicate, show both invoices so the reviewer can compare
         if dupe_source:
             tab_current, tab_original = st.tabs(["This invoice", "Original (processed)"])
             with tab_current:
@@ -341,7 +323,7 @@ def review_card(state: InvoiceState, idx: int):
     """, unsafe_allow_html=True)
 
     # approve always visible, reject is two-step to prevent accidents
-    # "Accept Revision" appears only when original wasn't paid and amounts differ
+    # "Accept Revision" only shows when original was not paid
     has_revision = getattr(state, "_revision_source", None) and not getattr(state, "_revision_blocked", False)
     cols = st.columns([1, 1, 1, 1] if has_revision else [1, 1, 1])
     col_approve, col_reject, *rest = cols
@@ -371,7 +353,7 @@ def review_card(state: InvoiceState, idx: int):
                 state.flags = [f for f in state.flags if f.type != "duplicate_invoice"]
                 state.halted = False
                 state.halt_reason = None
-                state.reasoning = (state.reasoning or "") + " | Revision accepted by AP team â€” original was not paid."
+                state.reasoning = (state.reasoning or "") + " Revision accepted by AP team, original was not paid."
                 manual_approve(state)
                 st.session_state.results[idx] = state
                 st.rerun()
@@ -410,12 +392,11 @@ def review_card(state: InvoiceState, idx: int):
 
 def show_handled_row(state: InvoiceState, row_idx: int):
     """Uniform 5-column row: vendor/id | amount | badge | override (rejected only) | details."""
-    amount = f"${state.total_amount:,.2f}" if state.total_amount is not None else "â€”"
+    amount = f"${state.total_amount:,.2f}" if state.total_amount is not None else "-"
     invoice_id = state.invoice_number or os.path.basename(state.file_path)
     key = f"handled_detail_{row_idx}"
     can_override = state.decision == "rejected"
 
-    # fixed columns every row so the list looks uniform, override col is empty for approved/error
     col1, col2, col3, col4, col5 = st.columns([3, 2, 2, 1, 1])
 
     with col1:
@@ -475,7 +456,12 @@ def show_metrics(results: list):
 
     errored = [s for s in results if s.decision == "error"]
     if errored:
-        st.warning(f"{len(errored)} invoice(s) had system errors â€” check logs.")
+        st.warning(f"{len(errored)} invoice(s) had system errors. Check logs.")
+
+
+def inv_sort_key(s: InvoiceState) -> int:
+    num = "".join(filter(str.isdigit, s.invoice_number or ""))
+    return int(num) if num else 0
 
 
 # ---- app ----
@@ -512,7 +498,6 @@ with tab_batch:
         c1, c2, _ = st.columns([1, 1, 4])
         with c1:
             if st.button("Yes, reset", key="confirm_db_yes", use_container_width=True):
-                import subprocess, sys
                 subprocess.run([sys.executable, "setup_db.py"], check=True)
                 st.session_state.results = []
                 st.session_state.confirm_reset_db = False
@@ -538,11 +523,6 @@ with tab_batch:
         show_metrics(results)
 
         if handled:
-            def inv_sort_key(s):
-                # sort numerically by the trailing number in the invoice number (INV-1001 -> 1001)
-                num = ''.join(filter(str.isdigit, s.invoice_number or ""))
-                return int(num) if num else 0
-
             with st.expander(f"Already handled ({len(handled)} invoices)", expanded=False):
                 for j, state in enumerate(sorted(handled, key=inv_sort_key)):
                     show_handled_row(state, j)
