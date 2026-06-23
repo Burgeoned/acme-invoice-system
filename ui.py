@@ -210,7 +210,7 @@ def lookup_duplicate_source(invoice_number: str, current_file: str) -> dict | No
 def show_line_items(state: InvoiceState):
     for li in state.line_items:
         qty = int(li.quantity) if li.quantity == int(li.quantity) else li.quantity
-        st.markdown(f"- {li.item} &nbsp; x{qty} &nbsp; ${li.unit_price:,.2f} ea &nbsp; ${li.total:,.2f}", unsafe_allow_html=True)
+        st.markdown(f"- {li.item} · x{qty} · ${li.unit_price:,.2f} ea · ${li.total:,.2f}")
 
 
 def show_invoice_fields(state: InvoiceState):
