@@ -13,8 +13,9 @@ Run with: python eval.py
 """
 
 import os
-import time
+import subprocess
 import sys
+import time
 
 # force mock mode for eval so we get deterministic results without burning API credits
 os.environ["MOCK_GROK"] = "true"
@@ -242,7 +243,6 @@ def run_eval():
 
     # reset the DB so prior runs don't pollute results with cross-session duplicate flags
     print("  Resetting database for clean eval run...")
-    import subprocess
     subprocess.run([sys.executable, "setup_db.py"], check=True, capture_output=True)
     print()
 

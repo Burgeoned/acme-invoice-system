@@ -1,5 +1,6 @@
 import argparse
 import os
+from collections import defaultdict
 
 from state import InvoiceState
 from agents import ingestion, validation, approval, payment
@@ -47,7 +48,6 @@ def run_batch() -> list[InvoiceState]:
     # only process one per invoice, prefer PDF since thats the realistic source format,
     # otherwise take the newest by mtime. revised invoices (invoice_1004_revised.json) have
     # different stems so they pass through and get handled by the duplicate invoice number check.
-    from collections import defaultdict
     by_stem = defaultdict(list)
     for f in all_files:
         stem = os.path.splitext(os.path.basename(f))[0]
