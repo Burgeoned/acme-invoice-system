@@ -12,8 +12,10 @@ AP_POLICIES = """
 Acme Corp Accounts Payable Policies:
 
 Payment Terms:
-- Standard terms are Net 30. Anything shorter (Net 15, Due on Receipt) requires VP sign-off.
+- Standard terms are Net 30. Shorter terms from approved vendors are acceptable. Paying sooner is fine and sometimes comes with early payment discounts.
+- Short terms (under 15 days) or "due on receipt" from a new or unrecognized vendor is a pressure tactic and should be flagged. Urgency is a fraud signal when the vendor relationship is not established.
 - Due dates more than 60 days out are unusual and should be flagged.
+- "Urgent wire transfer" or "immediate payment required" language is a fraud signal regardless of vendor.
 
 Order Size:
 - Routine orders: $500 to $8,000. No additional scrutiny needed if vendor is approved.

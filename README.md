@@ -1,19 +1,19 @@
 # Acme Invoice Processing
 
-Multi-agent pipeline that automates invoice processing end to end — ingestion, validation, approval, and payment. Built for Acme Corp's AP team to cut a 5-day, 30%-error-rate manual process down to seconds.
+Multi-agent pipeline that automates invoice processing end to end. ingestion, validation, approval, and payment. Built for Acme Corp's AP team to cut a 5-day, 30%-error-rate manual process down to seconds.
 
 ---
 
 ## What it does
 
-Invoices come in from vendors in whatever format they use — PDF, JSON, CSV, XML, plain text. The pipeline extracts structured data, checks it against inventory and vendor records, runs it through an approval agent that reasons with tools and a self-critique loop, and either processes payment or routes to the AP team for review.
+Invoices come in from vendors in whatever format they use. PDF, JSON, CSV, XML, plain text. The pipeline extracts structured data, checks it against inventory and vendor records, runs it through an approval agent that reasons with tools and a self-critique loop, and either processes payment or routes to the AP team for review.
 
 **Four agents:**
 
-1. **Ingestion** — reads any supported format, sends to Grok for structured extraction with a confidence score. Retries with a stricter prompt on parse failure.
-2. **Validation** — deterministic checks against SQLite: vendor whitelist with fuzzy matching, item catalog, stock levels, price variance, data integrity. No LLM, fully auditable.
-3. **Approval** — Grok agent with tool calling. Calls `lookup_vendor_history`, `get_vendor_profile`, and `get_item_price` to gather context before deciding. Self-critique loop: a second call reviews the first decision and can change it. Hard rules block fraud and data integrity failures before Grok is involved.
-4. **Payment** — mock payment API on approval, audit log on every outcome.
+1. **Ingestion** - reads any supported format, sends to Grok for structured extraction with a confidence score. Retries with a stricter prompt on parse failure.
+2. **Validation** - deterministic checks against SQLite: vendor whitelist with fuzzy matching, item catalog, stock levels, price variance, data integrity. No LLM, fully auditable.
+3. **Approval** - Grok agent with tool calling. Calls `lookup_vendor_history`, `get_vendor_profile`, and `get_item_price` to gather context before deciding. Self-critique loop: a second call reviews the first decision and can change it. Hard rules block fraud and data integrity failures before Grok is involved.
+4. **Payment** - mock payment API on approval, audit log on every outcome.
 
 **UI:** Streamlit interface for the AP team. Human review invoices surface front and center with inline approve/reject. Detail panel shows the original invoice file side by side with extracted fields and Grok's reasoning.
 
@@ -60,7 +60,7 @@ XAI_API_KEY=your_key_here
 MOCK_GROK=false
 ```
 
-Set `MOCK_GROK=true` to run without API calls — useful for testing and eval.
+Set `MOCK_GROK=true` to run without API calls. useful for testing and eval.
 
 Initialize the database:
 
@@ -143,11 +143,11 @@ A few choices worth knowing about:
 
 **No LangGraph or CrewAI.** The flow is always linear. A routing framework solves a problem this pipeline doesn't have and adds surface area for things to break.
 
-**Validation is fully deterministic.** Every check is a DB query or arithmetic — no LLM. Fast, cheap, auditable. Grok only enters at extraction and approval where judgment is actually needed.
+**Validation is fully deterministic.** Every check is a DB query or arithmetic, no LLM. Fast, cheap, auditable. Grok only enters at extraction and approval where judgment is actually needed.
 
 **Approval agent uses tool calling.** Grok decides what context it needs before making a decision. For a price variance flag it calls `get_item_price` to see the actual delta. For an unfamiliar vendor it calls `lookup_vendor_history`. A self-critique pass then reviews whether the tool findings supported the decision.
 
-**Human review is intentional.** The pipeline defaults to human review when uncertain rather than guessing. Stock issues, unknown vendors, and price variances that Grok cannot confidently resolve go to the AP team's queue. In production with a fully populated vendor whitelist the queue shrinks considerably — most of the human reviews in the test batch are from vendors not yet onboarded to the whitelist.
+**Human review is intentional.** The pipeline defaults to human review when uncertain rather than guessing. Stock issues, unknown vendors, and price variances that Grok cannot confidently resolve go to the AP team's queue. In production with a fully populated vendor whitelist the queue shrinks considerably. Most of the human reviews in the test batch are from vendors not yet onboarded to the whitelist.
 
 **No in-tool amount corrections.** AP staff reject with a reason and request a corrected resubmission from the vendor. Letting someone edit a financial field in an internal tool creates audit risk that is harder to trace than the original problem.
 
