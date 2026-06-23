@@ -37,12 +37,31 @@ def run_batch() -> list[InvoiceState]:
         print(f"Invoice directory not found: {INVOICE_DIR}")
         return []
 
-    # newest first so revised invoices process before originals and win the duplicate check
-    files = [
+    all_files = [
         os.path.join(INVOICE_DIR, f)
         for f in os.listdir(INVOICE_DIR)
         if os.path.splitext(f)[1].lower() in SUPPORTED_EXTENSIONS
     ]
+
+    # if the same invoice exists in multiple formats (invoice_1011.pdf + invoice_1011.txt),
+    # only process one — prefer PDF since thats the realistic source format,
+    # otherwise take the newest by mtime. revised invoices (invoice_1004_revised.json) have
+    # different stems so they pass through and get handled by the duplicate invoice number check.
+    from collections import defaultdict
+    by_stem = defaultdict(list)
+    for f in all_files:
+        stem = os.path.splitext(os.path.basename(f))[0]
+        by_stem[stem].append(f)
+
+    files = []
+    for stem, group in by_stem.items():
+        if len(group) == 1:
+            files.append(group[0])
+        else:
+            pdfs = [f for f in group if f.lower().endswith(".pdf")]
+            files.append(max(pdfs, key=os.path.getmtime) if pdfs else max(group, key=os.path.getmtime))
+
+    # newest first so revised invoices process before originals and win the duplicate check
     files.sort(key=os.path.getmtime, reverse=True)
 
     if not files:
