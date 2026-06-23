@@ -193,6 +193,15 @@ def run(state: InvoiceState):
     if not state.line_items:
         state.add_flag("no_line_items", "No line items extracted")
 
+    # cross-check: if stated total and line item sum are more than 20% apart something went wrong
+    if state.line_items and state.total_amount:
+        computed = sum(li.total for li in state.line_items)
+        if computed > 0 and abs(computed - state.total_amount) / computed > 0.20:
+            state.add_flag(
+                "low_confidence",
+                f"Stated total ${state.total_amount:,.2f} doesn't match line item sum ${computed:,.2f} — extraction may be incomplete"
+            )
+
     if state.confidence == "low":
         state.add_flag("low_confidence", "Grok flagged this extraction as low confidence, worth a manual check")
 

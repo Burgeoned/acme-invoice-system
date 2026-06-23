@@ -242,6 +242,15 @@ def format_flags(state: InvoiceState) -> str:
 
 def run_grok_approval(state: InvoiceState):
     high_value = (state.total_amount or 0) >= HIGH_VALUE_THRESHOLD
+    has_flags = bool(state.flags)
+
+    # simple invoices (approved vendor, no flags, under threshold) don't need tool calls
+    # skip the loop and ask for a direct decision to save tokens
+    simple_case = (
+        state.vendor_status == "approved"
+        and not has_flags
+        and not high_value
+    )
 
     user_message = f"""Review this invoice and decide whether to approve, reject, or escalate.
 
@@ -256,7 +265,7 @@ High value invoice (over $10,000): {high_value}
 Payment terms: {state.payment_terms or "not specified"}
 </invoice_data>
 
-Use your tools to gather more context if needed, then return your decision as JSON."""
+{"Return your decision as JSON." if simple_case else "Use your tools to gather more context if needed, then return your decision as JSON."}"""
 
     messages = [
         {"role": "system", "content": SYSTEM_PROMPT},
@@ -266,15 +275,15 @@ Use your tools to gather more context if needed, then return your decision as JS
     tool_findings = []
     escalation_reason = None
 
-    # agentic loop: grok runs until it stops calling tools or we hit the limit
-    MAX_TOOL_ROUNDS = 3  # 3 rounds covers all real cases, caps token spend
+    # simple cases skip tool loop entirely, complex ones get up to 3 rounds
+    MAX_TOOL_ROUNDS = 1 if simple_case else 3
     for round_num in range(MAX_TOOL_ROUNDS):
         try:
             response = client.chat.completions.create(
                 model="grok-3",
                 messages=messages,
-                tools=APPROVAL_TOOLS,
-                tool_choice="auto",
+                tools=APPROVAL_TOOLS if not simple_case else None,
+                tool_choice="auto" if not simple_case else None,
                 temperature=0,
             )
         except Exception as e:
