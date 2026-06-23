@@ -52,6 +52,21 @@ MOCK_INGESTION = {
         "total_amount": 1890.00,
         "confidence": "high",
     },
+    "INV-1004-revised": {
+        "invoice_number": "INV-1004",
+        "vendor": "Precision Parts Ltd.",
+        "date": "2026-01-22",
+        "due_date": "2026-02-22",
+        "payment_terms": "Net 30",
+        "currency": "USD",
+        "line_items": [
+            {"item": "WidgetA", "quantity": 3,  "unit_price": 250.00},
+            {"item": "WidgetB", "quantity": 2,  "unit_price": 500.00},
+            {"item": "GadgetX", "quantity": 5,  "unit_price": 750.00},
+        ],
+        "total_amount": 5940.00,
+        "confidence": "high",
+    },
     "INV-1005": {
         "invoice_number": "INV-1005",
         "vendor": "Global Supply Chain Partners",

@@ -140,13 +140,16 @@ def run(state: InvoiceState):
     # use mock responses if MOCK_GROK=true, saves API credits during development
     extracted = None
     if MOCK_GROK:
-        # pull the number out of the filename e.g. invoice_1001.txt -> INV-1001
         basename = os.path.splitext(os.path.basename(state.file_path))[0]
+        is_revised = "revised" in basename
         parts = basename.split("_")
         for part in parts:
             if part.isdigit():
-                invoice_num = f"INV-{part}"
-                extracted = MOCK_INGESTION.get(invoice_num)
+                # try the more specific key first (INV-1004-revised) then fall back to plain number
+                if is_revised:
+                    extracted = MOCK_INGESTION.get(f"INV-{part}-revised") or MOCK_INGESTION.get(f"INV-{part}")
+                else:
+                    extracted = MOCK_INGESTION.get(f"INV-{part}")
                 break
         if not extracted:
             state.add_error(f"No mock response found for {state.file_path}")

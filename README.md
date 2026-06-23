@@ -19,7 +19,23 @@ Invoices come in from vendors in whatever format they use — PDF, JSON, CSV, XM
 
 ---
 
-## Setup
+## Running with Docker
+
+The easiest way to run the full stack:
+
+```bash
+# add your API key to .env first
+echo "XAI_API_KEY=your_key_here" > .env
+echo "MOCK_GROK=true" >> .env
+
+docker compose up
+```
+
+Then open `http://localhost:8501`. The database and audit logs persist across restarts via volume mounts.
+
+---
+
+## Running locally
 
 **Requirements:** Python 3.11+, an xAI API key
 

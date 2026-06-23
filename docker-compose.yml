@@ -1,0 +1,11 @@
+services:
+  app:
+    build: .
+    ports:
+      - "8501:8501"
+    env_file:
+      - .env
+    volumes:
+      # persist the database and audit logs across container restarts
+      - ./inventory.db:/app/inventory.db
+      - ./logs:/app/logs
