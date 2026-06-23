@@ -89,9 +89,9 @@ def check_items_and_stock(state: InvoiceState, cursor):
         inv_row = cursor.fetchone()
 
         if not inv_row or inv_row["stock"] == 0:
-            state.add_flag("out_of_stock", f"'{item_name}' is out of stock")
+            state.add_flag("out_of_stock", f"'{item_name}' is not available for ordering")
         elif inv_row["stock"] < total_qty:
-            state.add_flag("stock_mismatch", f"'{item_name}' requested {total_qty}, only {inv_row['stock']} in stock")
+            state.add_flag("stock_mismatch", f"'{item_name}': invoice requests {total_qty} units but authorized limit is {inv_row['stock']}")
 
 
 def check_prices(state: InvoiceState, cursor):

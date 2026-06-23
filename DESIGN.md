@@ -44,8 +44,8 @@ Checks the extracted data against SQLite. Runs these checks in order:
    - No match, no close match -> unknown vendor, halt for human review
 
    Case-insensitive matching handles the common case ("widgets inc" vs "Widgets Inc."). Fuzzy matching handles formatting differences ("Widgets Incorporated" vs "Widgets Inc.") but is capped at a high threshold to avoid false positives — a bad actor named "Widgets lnc" (letter substitution) should not auto-match.
-4. **Item existence** — does each item exist in the catalog? "Unknown item" and "out of stock" are different failure modes and should produce different messages.
-5. **Stock check** — quantities are aggregated per item across all line items before checking stock. An invoice with the same item on three lines (e.g. volume discounts) gets the quantities summed first.
+4. **Item existence** — does each item exist in the catalog? "Not in catalog" and "not available for ordering" are different failure modes and should produce different messages.
+5. **Quantity authorization check** — invoice quantities are compared against the authorized limits in the catalog. This approximates PO matching: in production every invoice line item would be validated against an approved purchase order. Here the catalog limits stand in for that. Quantities are aggregated per item across all line items before checking, so an invoice with the same item on three lines (e.g. volume discounts) gets the quantities summed first.
 6. **Price check** — invoice unit price is compared against the DB price. Variance within 15% passes. Over 15% adds a price flag to state; Grok decides in the approval stage. This threshold allows rush order markups and volume discounts to pass through to judgment rather than hard-rejecting.
 
 No LLM in validation. Every check is deterministic — it either matches the DB or it doesn't. Using Grok here would be slower, more expensive, and harder to audit.
@@ -112,14 +112,14 @@ Master catalog — what items exist and what they cost. This is the source of tr
 
 ### inventory
 
-Stock levels. References items.
+Authorized order quantities per item. References items. In production this would be replaced by PO matching — validating invoice quantities against approved purchase orders. Here the quantity limits simulate that constraint so the validation agent has something real to check against.
 
 | column | type    |
 |--------|---------|
 | item   | TEXT PK |
 | stock  | INTEGER |
 
-Keeping these separate means "item doesn't exist" (not in items) and "item exists but zero stock" (in items, stock = 0) are distinct — they produce different validation messages and mean different things operationally.
+Keeping these separate means "item doesn't exist in our catalog" (not in items) and "item exists but is not available for ordering" (in items, quantity = 0) are distinct — they produce different validation messages and mean different things operationally.
 
 Seed data:
 
@@ -179,8 +179,8 @@ The minimum schema merges item existence and stock levels into one table. Separa
 **Why 15% price tolerance**
 Hard price matching rejects legitimate invoices — rush orders run at a markup, volume orders come with discounts. 15% captures both without letting through significant price gouging. Anything over the threshold doesn't auto-reject; it gets flagged and Grok reasons about it in approval.
 
-**Why snapshot stock in batch mode**
-Each invoice is checked against DB stock independently. In a real system you'd have stock reservations, but for a prototype that introduces non-determinism in tests — the first invoice to run would affect every one after it. Snapshot keeps the evals consistent.
+**Why snapshot catalog limits in batch mode**
+Each invoice is checked against the catalog independently. In a real PO-matching system you'd decrement authorized quantities as invoices are approved, but for a prototype that introduces non-determinism in tests — the first invoice to run would affect every one after it. Snapshot keeps the evals consistent.
 
 **Why sort batch files by modified date (newest first)**
 Alphabetical sort breaks down for revised invoices. INV-1004 and INV-1004_revised have the same invoice number — sorting newest-first means the revised file processes first and wins. When the older original comes up next, it gets caught as a duplicate of an already-approved invoice and is auto-rejected as superseded, so it never hits the human review queue. The AP team only sees the version that should actually be paid.

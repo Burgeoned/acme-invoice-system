@@ -1,14 +1,15 @@
-import base64
+﻿import base64
 import os
 import sqlite3
 import streamlit as st
+import streamlit.components.v1 as components
 
 from main import run_single, run_batch, manual_approve, manual_reject
 from state import InvoiceState
 
 st.set_page_config(
     page_title="Acme Invoice Review",
-    page_icon="🧾",
+    page_icon="ðŸ§¾",
     layout="wide",
 )
 
@@ -34,33 +35,7 @@ st.markdown("""
         box-shadow: 0 0px 1px rgba(0,0,0,0.1) !important;
     }
 
-    /* marker-based button coloring
-       each st.markdown marker sits in a sibling div right before the button div,
-       so we can target the very next stButton using the adjacent + selector */
-    div:has(span.mk-green) + div button,
-    div:has(span.mk-green) + div + div button {
-        background-color: #16a34a !important;
-        color: white !important;
-        border: none !important;
-    }
-    div:has(span.mk-red) + div button,
-    div:has(span.mk-red) + div + div button {
-        background-color: #dc2626 !important;
-        color: white !important;
-        border: none !important;
-    }
-    div:has(span.mk-amber) + div button,
-    div:has(span.mk-amber) + div + div button {
-        background-color: #d97706 !important;
-        color: white !important;
-        border: none !important;
-    }
-    div:has(span.mk-gray) + div button,
-    div:has(span.mk-gray) + div + div button {
-        background-color: white !important;
-        color: #374151 !important;
-        border: 1px solid #d1d5db !important;
-    }
+    /* button colors applied via JS injection below â€” see inject_button_colors() */
 
     /* metric cards */
     div[data-testid="metric-container"] {
@@ -98,10 +73,42 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# drop one of these right before st.button() to color it
-def mk(color: str):
-    tag = {"green": "mk-green", "red": "mk-red", "amber": "mk-amber", "gray": "mk-gray"}.get(color, "mk-gray")
-    st.markdown(f'<span class="{tag}"></span>', unsafe_allow_html=True)
+def inject_button_colors():
+    """
+    Colors buttons by their label text using JS via components.html.
+    components.html runs in its own iframe but window.parent.document
+    lets it reach the main Streamlit page. MutationObserver re-applies
+    after every Streamlit DOM update so colors survive rerenders.
+    """
+    components.html("""
+    <script>
+    function applyColors() {
+        const doc = window.parent.document;
+        doc.querySelectorAll('button').forEach(function(btn) {
+            const text = btn.innerText.trim();
+            if (['Approve', 'Run Batch', 'Run Invoice', 'Approve and process payment'].includes(text)) {
+                btn.style.setProperty('background-color', '#16a34a', 'important');
+                btn.style.setProperty('color', 'white', 'important');
+                btn.style.setProperty('border', 'none', 'important');
+            } else if (['Reject', 'Confirm rejection', 'Yes, reset'].includes(text)) {
+                btn.style.setProperty('background-color', '#dc2626', 'important');
+                btn.style.setProperty('color', 'white', 'important');
+                btn.style.setProperty('border', 'none', 'important');
+            } else if (text === 'Accept Revision') {
+                btn.style.setProperty('background-color', '#d97706', 'important');
+                btn.style.setProperty('color', 'white', 'important');
+                btn.style.setProperty('border', 'none', 'important');
+            }
+        });
+    }
+    applyColors();
+    setTimeout(applyColors, 150);
+    new MutationObserver(applyColors).observe(
+        window.parent.document.body,
+        { childList: true, subtree: true }
+    );
+    </script>
+    """, height=0)
 
 DECISION_COLORS = {
     "approved":     "#22c55e",
@@ -118,8 +125,8 @@ DECISION_LABELS = {
 }
 
 FLAG_PLAIN_ENGLISH = {
-    "stock_mismatch":        "Quantity exceeds available stock",
-    "out_of_stock":          "Item is out of stock",
+    "stock_mismatch":        "Quantity exceeds authorized order limit",
+    "out_of_stock":          "Item is not available for ordering",
     "unknown_item":          "Item not in catalog",
     "price_variance":        "Price deviates from expected",
     "unknown_vendor":        "Vendor not on approved list",
@@ -218,8 +225,7 @@ def show_line_items(state: InvoiceState):
         return
     for li in state.line_items:
         qty = int(li.quantity) if li.quantity == int(li.quantity) else li.quantity
-        # plain text with unicode dot, avoids markdown entity rendering issues
-        st.text(f"  {li.item}  ·  x{qty}  ·  ${li.unit_price:,.2f} ea  ·  ${li.total:,.2f}")
+        st.markdown(f"- {li.item} &nbsp; x{qty} &nbsp; ${li.unit_price:,.2f} ea &nbsp; ${li.total:,.2f}", unsafe_allow_html=True)
 
 
 def show_invoice_fields(state: InvoiceState):
@@ -228,7 +234,7 @@ def show_invoice_fields(state: InvoiceState):
     st.markdown(f"**Vendor:** {state.vendor or 'unknown'}")
     st.markdown(f"**Date:** {state.date or 'unknown'}")
     st.markdown(f"**Due:** {state.due_date or 'unknown'}")
-    if state.payment_terms:
+    if getattr(state, "payment_terms", None):
         st.markdown(f"**Payment terms:** {state.payment_terms}")
     st.markdown(f"**Confidence:** {state.confidence or 'unknown'}")
 
@@ -288,7 +294,7 @@ def show_invoice_fields(state: InvoiceState):
 
     if state.payment_result:
         pr = state.payment_result
-        st.success(f"Payment confirmed. Transaction {pr['transaction_id']} · ${pr['amount']:,.2f} to {pr['vendor']} at {pr['timestamp']}")
+        st.success(f"Payment confirmed. Transaction {pr['transaction_id']} Â· ${pr['amount']:,.2f} to {pr['vendor']} at {pr['timestamp']}")
 
     if state.errors:
         for e in state.errors:
@@ -343,7 +349,6 @@ def review_card(state: InvoiceState, idx: int):
     col_detail = rest[-1]
 
     with col_approve:
-        mk("green")
         if st.button("Approve", key=f"approve_{idx}", use_container_width=True):
             manual_approve(state)
             st.session_state.results[idx] = state
@@ -352,31 +357,27 @@ def review_card(state: InvoiceState, idx: int):
     with col_reject:
         rejecting = st.session_state.get(f"rejecting_{idx}", False)
         if not rejecting:
-            mk("red")
             if st.button("Reject", key=f"reject_{idx}", use_container_width=True):
                 st.session_state[f"rejecting_{idx}"] = True
                 st.rerun()
         else:
-            mk("gray")
             if st.button("Cancel", key=f"cancel_reject_{idx}", use_container_width=True):
                 st.session_state[f"rejecting_{idx}"] = False
                 st.rerun()
 
     if col_revision:
         with col_revision:
-            mk("amber")
             if st.button("Accept Revision", key=f"accept_revision_{idx}", use_container_width=True):
                 state.flags = [f for f in state.flags if f.type != "duplicate_invoice"]
                 state.halted = False
                 state.halt_reason = None
-                state.reasoning = (state.reasoning or "") + " | Revision accepted by AP team — original was not paid."
+                state.reasoning = (state.reasoning or "") + " | Revision accepted by AP team â€” original was not paid."
                 manual_approve(state)
                 st.session_state.results[idx] = state
                 st.rerun()
 
     with col_detail:
         label = "Hide" if st.session_state.get(f"show_detail_{idx}") else "Details"
-        mk("gray")
         if st.button(label, key=f"detail_{idx}", use_container_width=True):
             st.session_state[f"show_detail_{idx}"] = not st.session_state.get(f"show_detail_{idx}", False)
             st.rerun()
@@ -387,7 +388,6 @@ def review_card(state: InvoiceState, idx: int):
             key=f"reason_{idx}",
             placeholder="Enter reason, then confirm",
         )
-        mk("red")
         if st.button("Confirm rejection", key=f"confirm_reject_{idx}", use_container_width=True):
             if not reason.strip():
                 st.error("A reason is required")
@@ -410,7 +410,7 @@ def review_card(state: InvoiceState, idx: int):
 
 def show_handled_row(state: InvoiceState, row_idx: int):
     """Uniform 5-column row: vendor/id | amount | badge | override (rejected only) | details."""
-    amount = f"${state.total_amount:,.2f}" if state.total_amount is not None else "—"
+    amount = f"${state.total_amount:,.2f}" if state.total_amount is not None else "â€”"
     invoice_id = state.invoice_number or os.path.basename(state.file_path)
     key = f"handled_detail_{row_idx}"
     can_override = state.decision == "rejected"
@@ -427,20 +427,17 @@ def show_handled_row(state: InvoiceState, row_idx: int):
     with col4:
         if can_override:
             overriding = st.session_state.get(f"overriding_{row_idx}", False)
-            mk("gray")
             if st.button("Cancel" if overriding else "Override", key=f"override_toggle_{row_idx}", use_container_width=True):
                 st.session_state[f"overriding_{row_idx}"] = not overriding
                 st.rerun()
     with col5:
         detail_label = "Hide" if st.session_state.get(key) else "Details"
-        mk("gray")
         if st.button(detail_label, key=f"btn_{key}", use_container_width=True):
             st.session_state[key] = not st.session_state.get(key, False)
             st.rerun()
 
     if st.session_state.get(f"overriding_{row_idx}"):
         st.info("This invoice was rejected. No payment was sent. Approving it now will run payment and write to the audit log.")
-        mk("green")
         if st.button("Approve and process payment", key=f"override_approve_{row_idx}", use_container_width=True):
             state.decision = None
             manual_approve(state)
@@ -478,7 +475,7 @@ def show_metrics(results: list):
 
     errored = [s for s in results if s.decision == "error"]
     if errored:
-        st.warning(f"{len(errored)} invoice(s) had system errors — check logs.")
+        st.warning(f"{len(errored)} invoice(s) had system errors â€” check logs.")
 
 
 # ---- app ----
@@ -486,32 +483,11 @@ def show_metrics(results: list):
 st.markdown("""
 <div class="acme-header">
     <h1>Acme Invoice Review</h1>
-    <span>Accounts Payable · Internal Tool</span>
+    <span>Accounts Payable &middot; Internal Tool</span>
 </div>
-<script>
-function applyButtonColors() {
-    document.querySelectorAll('button').forEach(function(btn) {
-        const text = btn.innerText.trim();
-        if (['Approve', 'Run Batch', 'Run Invoice', 'Approve and process payment'].includes(text)) {
-            btn.style.backgroundColor = '#16a34a';
-            btn.style.color = 'white';
-            btn.style.border = 'none';
-        } else if (['Reject', 'Confirm rejection'].includes(text)) {
-            btn.style.backgroundColor = '#dc2626';
-            btn.style.color = 'white';
-            btn.style.border = 'none';
-        } else if (text === 'Accept Revision') {
-            btn.style.backgroundColor = '#d97706';
-            btn.style.color = 'white';
-            btn.style.border = 'none';
-        }
-    });
-}
-applyButtonColors();
-setTimeout(applyButtonColors, 50);
-setTimeout(applyButtonColors, 200);
-</script>
 """, unsafe_allow_html=True)
+
+inject_button_colors()
 
 tab_batch, tab_single = st.tabs(["Batch Processing", "Single Invoice"])
 
@@ -519,26 +495,22 @@ tab_batch, tab_single = st.tabs(["Batch Processing", "Single Invoice"])
 with tab_batch:
     col_run, col_reset, col_db, _ = st.columns([1, 1, 1, 4])
     with col_run:
-        mk("green")
         if st.button("Run Batch", use_container_width=True):
             with st.spinner("Processing invoices..."):
                 st.session_state.results = run_batch()
     with col_reset:
-        mk("gray")
         if st.button("Reset view", use_container_width=True, help="Clears the display only. All decisions stay in the database."):
             st.session_state.results = []
             st.rerun()
     with col_db:
-        mk("gray")
         if st.button("Reset DB", use_container_width=True, help="Wipes processed_invoices and audit logs. Testing only."):
             st.session_state.confirm_reset_db = True
             st.rerun()
 
     if st.session_state.get("confirm_reset_db"):
         st.warning("This will wipe all processed invoices and audit logs. Are you sure?")
-        c1, c2 = st.columns([1, 5])
+        c1, c2, _ = st.columns([1, 1, 4])
         with c1:
-            mk("red")
             if st.button("Yes, reset", key="confirm_db_yes", use_container_width=True):
                 import subprocess, sys
                 subprocess.run([sys.executable, "setup_db.py"], check=True)
@@ -546,7 +518,6 @@ with tab_batch:
                 st.session_state.confirm_reset_db = False
                 st.rerun()
         with c2:
-            mk("gray")
             if st.button("Cancel", key="confirm_db_cancel", use_container_width=True):
                 st.session_state.confirm_reset_db = False
                 st.rerun()
@@ -567,8 +538,13 @@ with tab_batch:
         show_metrics(results)
 
         if handled:
+            def inv_sort_key(s):
+                # sort numerically by the trailing number in the invoice number (INV-1001 -> 1001)
+                num = ''.join(filter(str.isdigit, s.invoice_number or ""))
+                return int(num) if num else 0
+
             with st.expander(f"Already handled ({len(handled)} invoices)", expanded=False):
-                for j, state in enumerate(handled):
+                for j, state in enumerate(sorted(handled, key=inv_sort_key)):
                     show_handled_row(state, j)
 
 # ---- single invoice tab ----
@@ -584,7 +560,6 @@ with tab_single:
         with open(tmp_path, "wb") as f:
             f.write(uploaded.getbuffer())
 
-        mk("green")
         if st.button("Run Invoice", use_container_width=True):
             with st.spinner("Processing..."):
                 state = run_single(tmp_path)
@@ -615,26 +590,22 @@ with tab_single:
 
             ca, cb = st.columns([1, 1])
             with ca:
-                mk("green")
                 if st.button("Approve", key="single_approve", use_container_width=True):
                     manual_approve(state)
                     st.session_state.single_result = state
                     st.rerun()
             with cb:
                 if not st.session_state.get("single_rejecting"):
-                    mk("red")
                     if st.button("Reject", key="single_reject", use_container_width=True):
                         st.session_state.single_rejecting = True
                         st.rerun()
                 else:
-                    mk("gray")
                     if st.button("Cancel", key="single_cancel", use_container_width=True):
                         st.session_state.single_rejecting = False
                         st.rerun()
 
             if st.session_state.get("single_rejecting"):
                 reason = st.text_input("Reason for rejection", key="single_reason", placeholder="Enter reason, then confirm")
-                mk("red")
                 if st.button("Confirm rejection", key="single_confirm_reject", use_container_width=True):
                     if not reason.strip():
                         st.error("A reason is required")
