@@ -210,7 +210,8 @@ def lookup_duplicate_source(invoice_number: str, current_file: str) -> dict | No
 def show_line_items(state: InvoiceState):
     for li in state.line_items:
         qty = int(li.quantity) if li.quantity == int(li.quantity) else li.quantity
-        st.markdown(f"- {li.item} · x{qty} · ${li.unit_price:,.2f} ea · ${li.total:,.2f}")
+        # escape $ so Streamlit doesn't treat paired $ as LaTeX math delimiters
+        st.markdown(f"- {li.item} · x{qty} · \\${li.unit_price:,.2f} ea · \\${li.total:,.2f}")
 
 
 def show_invoice_fields(state: InvoiceState):
@@ -390,17 +391,22 @@ def review_card(state: InvoiceState, idx: int):
     st.markdown("<div style='margin-bottom:8px'></div>", unsafe_allow_html=True)
 
 
-def show_handled_row(state: InvoiceState, row_idx: int):
+def show_handled_row(state: InvoiceState, row_idx: int, all_handled: list = None):
     """Uniform 5-column row: vendor/id | amount | badge | override (rejected only) | details."""
     amount = f"${state.total_amount:,.2f}" if state.total_amount is not None else "-"
     invoice_id = state.invoice_number or os.path.basename(state.file_path)
     key = f"handled_detail_{row_idx}"
     can_override = state.decision == "rejected"
 
+    # if multiple invoices share the same number (original + revised), show filename to distinguish
+    filename = os.path.basename(state.file_path)
+    same_number = all_handled and sum(1 for s in all_handled if s.invoice_number == state.invoice_number) > 1
+    subtitle = filename if same_number else invoice_id
+
     col1, col2, col3, col4, col5 = st.columns([3, 2, 2, 1, 1])
 
     with col1:
-        st.markdown(f"**{state.vendor or 'unknown'}**  \n<span style='color:#9ca3af;font-size:0.8rem'>{invoice_id}</span>", unsafe_allow_html=True)
+        st.markdown(f"**{state.vendor or 'unknown'}**  \n<span style='color:#9ca3af;font-size:0.8rem'>{subtitle}</span>", unsafe_allow_html=True)
     with col2:
         st.markdown(f"<span style='line-height:2.2'>{amount}</span>", unsafe_allow_html=True)
     with col3:
@@ -457,6 +463,16 @@ def show_metrics(results: list):
     errored = [s for s in results if s.decision == "error"]
     if errored:
         st.warning(f"{len(errored)} invoice(s) had system errors. Check logs.")
+
+    # vendor breakdown for approved invoices
+    if approved:
+        st.markdown("**Approved spend by vendor:**")
+        vendor_totals: dict[str, float] = {}
+        for s in approved:
+            v = s.vendor or "Unknown"
+            vendor_totals[v] = vendor_totals.get(v, 0) + (s.total_amount or 0)
+        for vendor, total in sorted(vendor_totals.items(), key=lambda x: x[1], reverse=True):
+            st.markdown(f"- {vendor}: **\\${total:,.2f}**")
 
 
 def inv_sort_key(s: InvoiceState) -> int:
@@ -523,9 +539,10 @@ with tab_batch:
         show_metrics(results)
 
         if handled:
+            sorted_handled = sorted(handled, key=inv_sort_key)
             with st.expander(f"Already handled ({len(handled)} invoices)", expanded=False):
-                for j, state in enumerate(sorted(handled, key=inv_sort_key)):
-                    show_handled_row(state, j)
+                for j, state in enumerate(sorted_handled):
+                    show_handled_row(state, j, all_handled=sorted_handled)
 
 # ---- single invoice tab ----
 with tab_single:
