@@ -26,6 +26,7 @@ Extract structured data from the invoice text below and return valid JSON only, 
 
 Normalize item names: remove extra spaces and fix common OCR artifacts.
 For example "Widget A" -> "WidgetA", "Gadget X" -> "GadgetX", "2O26" -> "2026".
+Preserve invoice numbers exactly as they appear including any prefix like "INV-".
 
 Return this exact structure:
 {{
