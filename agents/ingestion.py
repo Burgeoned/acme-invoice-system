@@ -28,7 +28,7 @@ Normalize item names: remove extra spaces and fix common OCR artifacts.
 For example "Widget A" -> "WidgetA", "Gadget X" -> "GadgetX", "2O26" -> "2026".
 
 Return this exact structure:
-{
+{{
   "invoice_number": "string or null",
   "vendor": "string or null",
   "date": "YYYY-MM-DD or null",
@@ -36,11 +36,11 @@ Return this exact structure:
   "payment_terms": "e.g. Net 30, Net 60, Due on receipt, or null",
   "currency": "USD or other currency code, default to USD if not mentioned",
   "line_items": [
-    {"item": "string", "quantity": number, "unit_price": number}
+    {{"item": "string", "quantity": number, "unit_price": number}}
   ],
   "total_amount": number or null,
   "confidence": "high, medium, or low"
-}
+}}
 
 Confidence guide:
 - high: clean structured input, all fields present and clear
@@ -54,7 +54,7 @@ Invoice text:
 STRICT_EXTRACTION_PROMPT = """
 Return valid JSON only. No explanation, no markdown, no code blocks.
 Extract invoice data from the text below into this exact structure:
-{
+{{
   "invoice_number": "string or null",
   "vendor": "string or null",
   "date": "YYYY-MM-DD or null",
@@ -62,11 +62,11 @@ Extract invoice data from the text below into this exact structure:
   "payment_terms": "e.g. Net 30, Net 60, Due on receipt, or null",
   "currency": "USD or other currency code",
   "line_items": [
-    {"item": "string", "quantity": number, "unit_price": number}
+    {{"item": "string", "quantity": number, "unit_price": number}}
   ],
   "total_amount": number or null,
   "confidence": "high, medium, or low"
-}
+}}
 
 Text:
 {text}
