@@ -98,7 +98,7 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# helpers to inject color markers — drop one of these right before st.button()
+# drop one of these right before st.button() to color it
 def mk(color: str):
     tag = {"green": "mk-green", "red": "mk-red", "amber": "mk-amber", "gray": "mk-gray"}.get(color, "mk-gray")
     st.markdown(f'<span class="{tag}"></span>', unsafe_allow_html=True)
@@ -123,7 +123,7 @@ FLAG_PLAIN_ENGLISH = {
     "unknown_item":          "Item not in catalog",
     "price_variance":        "Price deviates from expected",
     "unknown_vendor":        "Vendor not on approved list",
-    "possible_vendor_match": "Vendor name closely matches a known vendor — confirm identity",
+    "possible_vendor_match": "Vendor name closely matches a known vendor. Confirm identity before approving.",
     "bad_actor":             "Vendor is flagged as a bad actor",
     "foreign_currency":      "Invoice is not in USD",
     "duplicate_invoice":     "Invoice number already processed",
@@ -132,7 +132,7 @@ FLAG_PLAIN_ENGLISH = {
     "missing_total":         "No total amount on invoice",
     "no_line_items":         "No line items found",
     "missing_vendor":        "No vendor name on invoice",
-    "low_confidence":        "Extraction confidence was low — data may be unreliable",
+    "low_confidence":        "Extraction confidence was low, data may be unreliable",
     "malformed_line_item":   "A line item could not be parsed",
 }
 
@@ -218,12 +218,12 @@ def show_line_items(state: InvoiceState):
         return
     for li in state.line_items:
         qty = int(li.quantity) if li.quantity == int(li.quantity) else li.quantity
-        # plain text with unicode dot — no markdown or html entity issues
+        # plain text with unicode dot, avoids markdown entity rendering issues
         st.text(f"  {li.item}  ·  x{qty}  ·  ${li.unit_price:,.2f} ea  ·  ${li.total:,.2f}")
 
 
 def show_invoice_fields(state: InvoiceState):
-    """Extracted fields, flags, and AI reasoning — left side of the detail panel."""
+    """Extracted fields, flags, and AI reasoning. Left side of the detail panel."""
     st.markdown(f"**Invoice #:** {state.invoice_number or 'unknown'}")
     st.markdown(f"**Vendor:** {state.vendor or 'unknown'}")
     st.markdown(f"**Date:** {state.date or 'unknown'}")
@@ -239,7 +239,7 @@ def show_invoice_fields(state: InvoiceState):
     if state.flags:
         st.markdown("**Flags:**")
         for f in state.flags:
-            # item-specific flags carry useful detail in their message — use it instead of the generic label
+            # item-specific flags have the actual item name in the message, use that over the generic label
             ITEM_SPECIFIC = {"stock_mismatch", "out_of_stock", "unknown_item", "price_variance", "malformed_line_item"}
             plain = f.message if f.type in ITEM_SPECIFIC else FLAG_PLAIN_ENGLISH.get(f.type, f.message)
             if f.type == "duplicate_invoice" and state.invoice_number:
@@ -256,7 +256,7 @@ def show_invoice_fields(state: InvoiceState):
                     )
                     if is_revision:
                         st.warning(
-                            f"Possible revised invoice — same number as **{fname}** ({decision_label} on {date_str}), "
+                            f"Possible revised invoice. Same number as **{fname}** ({decision_label} on {date_str}), "
                             f"but amount differs: original ${orig_amount:,.2f} vs this ${state.total_amount:,.2f}. "
                             f"Compare both versions before deciding."
                         )
@@ -264,18 +264,18 @@ def show_invoice_fields(state: InvoiceState):
                         if source["decision"] == "approved":
                             st.error(
                                 "Payment was already sent for the original. "
-                                "Accepting this revision requires a manual adjustment with finance — "
+                                "Accepting this revision requires a manual adjustment with finance. "
                                 "do not approve here. Contact the vendor for a credit memo or supplemental invoice."
                             )
                             state._revision_blocked = True
                         else:
                             st.info(
-                                f"Original was {decision_label.lower()} — no payment was sent. "
+                                f"Original was {decision_label.lower()}, no payment was sent. "
                                 "You can accept this revision and reprocess it."
                             )
                             state._revision_source = source
                     else:
-                        st.warning(f"Duplicate of **{fname}** — {decision_label} on {date_str}")
+                        st.warning(f"Duplicate of **{fname}** ({decision_label} on {date_str})")
                     state._dupe_source_path = source["file_path"]
                 else:
                     st.warning(plain)
@@ -288,7 +288,7 @@ def show_invoice_fields(state: InvoiceState):
 
     if state.payment_result:
         pr = state.payment_result
-        st.success(f"Payment confirmed — Transaction {pr['transaction_id']} · ${pr['amount']:,.2f} to {pr['vendor']} at {pr['timestamp']}")
+        st.success(f"Payment confirmed. Transaction {pr['transaction_id']} · ${pr['amount']:,.2f} to {pr['vendor']} at {pr['timestamp']}")
 
     if state.errors:
         for e in state.errors:
@@ -334,7 +334,7 @@ def review_card(state: InvoiceState, idx: int):
     </div>
     """, unsafe_allow_html=True)
 
-    # action row — approve always visible, reject is two-step
+    # approve always visible, reject is two-step to prevent accidents
     # "Accept Revision" appears only when original wasn't paid and amounts differ
     has_revision = getattr(state, "_revision_source", None) and not getattr(state, "_revision_blocked", False)
     cols = st.columns([1, 1, 1, 1] if has_revision else [1, 1, 1])
@@ -415,7 +415,7 @@ def show_handled_row(state: InvoiceState, row_idx: int):
     key = f"handled_detail_{row_idx}"
     can_override = state.decision == "rejected"
 
-    # fixed columns every row — override col is empty for non-rejected
+    # fixed columns every row so the list looks uniform, override col is empty for approved/error
     col1, col2, col3, col4, col5 = st.columns([3, 2, 2, 1, 1])
 
     with col1:
@@ -439,7 +439,7 @@ def show_handled_row(state: InvoiceState, row_idx: int):
             st.rerun()
 
     if st.session_state.get(f"overriding_{row_idx}"):
-        st.info("This invoice was rejected — no payment was sent. Approving it now will run payment and write to the audit log.")
+        st.info("This invoice was rejected. No payment was sent. Approving it now will run payment and write to the audit log.")
         mk("green")
         if st.button("Approve and process payment", key=f"override_approve_{row_idx}", use_container_width=True):
             state.decision = None
@@ -525,12 +525,12 @@ with tab_batch:
                 st.session_state.results = run_batch()
     with col_reset:
         mk("gray")
-        if st.button("Reset view", use_container_width=True, help="Clears the display only — decisions stay in the database"):
+        if st.button("Reset view", use_container_width=True, help="Clears the display only. All decisions stay in the database."):
             st.session_state.results = []
             st.rerun()
     with col_db:
         mk("gray")
-        if st.button("Reset DB", use_container_width=True, help="Wipes processed_invoices and audit logs — for testing only"):
+        if st.button("Reset DB", use_container_width=True, help="Wipes processed_invoices and audit logs. Testing only."):
             import subprocess, sys
             subprocess.run([sys.executable, "setup_db.py"], check=True)
             st.session_state.results = []

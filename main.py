@@ -44,7 +44,7 @@ def run_batch() -> list[InvoiceState]:
     ]
 
     # if the same invoice exists in multiple formats (invoice_1011.pdf + invoice_1011.txt),
-    # only process one — prefer PDF since thats the realistic source format,
+    # only process one per invoice, prefer PDF since thats the realistic source format,
     # otherwise take the newest by mtime. revised invoices (invoice_1004_revised.json) have
     # different stems so they pass through and get handled by the duplicate invoice number check.
     from collections import defaultdict

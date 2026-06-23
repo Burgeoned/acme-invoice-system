@@ -303,5 +303,8 @@ Session state is managed via st.session_state so batch results persist across in
 | INV-1014 | XML | EUR currency | Flagged — human review |
 | INV-1015 | CSV | Clean, tabular format | Approved |
 | INV-1016 | JSON | WidgetC exists in catalog, stock = 0 | Rejected — out of stock |
+| INV-1017 | TXT | "Widgets lnc" — lowercase L instead of capital I, fuzzy match test | Human review — possible vendor match |
+| INV-1018 | JSON | $12,500 clean order from known vendor, over $10K threshold | Approved — high value scrutiny passes |
+| INV-1019 | CSV | WidgetA and WidgetB in stock, GadgetX x10 exceeds stock of 5 | Human review — partial stock issue |
 
 Target: 80% of low-risk invoices auto-processed end-to-end. On Acme's volume, that's roughly $1.6M in annual savings.

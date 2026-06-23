@@ -221,6 +221,50 @@ MOCK_INGESTION = {
         "total_amount": 3233.00,
         "confidence": "high",
     },
+    "INV-1017": {
+        "invoice_number": "INV-1017",
+        "vendor": "Widgets lnc",  # lowercase L not capital I, classic spoofing attempt
+        "date": "2026-01-31",
+        "due_date": "2026-03-02",
+        "payment_terms": "Net 30",
+        "currency": "USD",
+        "line_items": [
+            {"item": "WidgetA", "quantity": 5, "unit_price": 250.00},
+            {"item": "WidgetB", "quantity": 2, "unit_price": 500.00},
+        ],
+        "total_amount": 2250.00,
+        "confidence": "high",
+    },
+    "INV-1018": {
+        "invoice_number": "INV-1018",
+        "vendor": "Precision Parts Ltd.",
+        "date": "2026-01-31",
+        "due_date": "2026-03-02",
+        "payment_terms": "Net 30",
+        "currency": "USD",
+        "line_items": [
+            {"item": "WidgetA", "quantity": 15, "unit_price": 250.00},
+            {"item": "WidgetB", "quantity": 10, "unit_price": 500.00},
+            {"item": "GadgetX", "quantity": 5,  "unit_price": 750.00},
+        ],
+        "total_amount": 12500.00,
+        "confidence": "high",
+    },
+    "INV-1019": {
+        "invoice_number": "INV-1019",
+        "vendor": "Gadgets Co.",
+        "date": "2026-01-31",
+        "due_date": "2026-03-02",
+        "payment_terms": "Net 30",
+        "currency": "USD",
+        "line_items": [
+            {"item": "WidgetA", "quantity": 3,  "unit_price": 250.00},
+            {"item": "GadgetX", "quantity": 10, "unit_price": 750.00},  # 10 requested, only 5 in stock
+            {"item": "WidgetB", "quantity": 2,  "unit_price": 500.00},
+        ],
+        "total_amount": 8750.00,
+        "confidence": "high",
+    },
 }
 
 # mock approval responses keyed by invoice number

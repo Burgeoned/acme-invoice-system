@@ -1,0 +1,12 @@
+invoice_number,INV-1019
+vendor,Gadgets Co.
+date,2026-01-31
+due_date,2026-03-02
+currency,USD
+payment_terms,Net 30
+total,8750.00
+
+item,quantity,unit_price
+WidgetA,3,250.00
+GadgetX,10,750.00
+WidgetB,2,500.00

@@ -36,11 +36,15 @@ def check_vendor(state: InvoiceState, cursor):
         return
 
     # no exact match, try fuzzy against all vendor names
+    # strip trailing punctuation before comparing so "Widgets Inc." vs "Widgets Inc" doesnt tank the score
     cursor.execute("SELECT name, approved FROM vendors")
     all_vendors = cursor.fetchall()
     vendor_names = [r["name"] for r in all_vendors]
+    vendor_stripped = vendor.rstrip(".,;")
+    names_stripped = [n.rstrip(".,;") for n in vendor_names]
 
-    match, score, _ = process.extractOne(vendor, vendor_names, scorer=fuzz.ratio) if vendor_names else (None, 0, None)
+    match_idx, score, _ = process.extractOne(vendor_stripped, names_stripped, scorer=fuzz.ratio) if names_stripped else (None, 0, None)
+    match = vendor_names[names_stripped.index(match_idx)] if match_idx else None
 
     if match and score >= FUZZY_MATCH_THRESHOLD:
         # found a close match but won't assume it's the same vendor, flag for human review

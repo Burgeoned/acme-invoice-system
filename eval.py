@@ -40,7 +40,7 @@ STATED_ANNUAL_LOSS = 2_000_000
 
 # ---- ground truth ----
 # expected_decision: what the pipeline should output
-# hard: True means this is a deterministic outcome — wrong answer is a real failure
+# hard: True means the pipeline must get this right, no acceptable alternatives
 # hard: False means human_review is acceptable when we expected approved (grok may be conservative)
 # expected_flags: at least one of these flag types should be present (empty means no flags expected)
 # acceptable: list of decisions that count as a pass (used for soft assertions)
@@ -76,7 +76,7 @@ GROUND_TRUTH = [
         "hard": False,
         "acceptable": ["approved", "rejected", "human_review"],
         "expected_flags": [],
-        "note": "Two files with same invoice number — one gets approved, one flagged as duplicate. Either outcome passes.",
+        "note": "Two files with same invoice number. One gets approved, one flagged as duplicate. Either outcome passes.",
     },
     {
         "invoice_number": "INV-1005",
@@ -108,7 +108,7 @@ GROUND_TRUTH = [
         "hard": True,
         "acceptable": ["human_review", "rejected"],
         "expected_flags": ["unknown_vendor"],
-        "note": "NoProd Industries not on vendor list — halts on vendor check before item check",
+        "note": "NoProd Industries not on vendor list, halts on vendor check before item check",
     },
     {
         "invoice_number": "INV-1009",
@@ -148,7 +148,7 @@ GROUND_TRUTH = [
         "hard": False,
         "acceptable": ["rejected", "human_review"],
         "expected_flags": ["stock_mismatch"],
-        "note": "Duplicate line items, aggregated qty exceeds stock — both PDF and JSON in batch",
+        "note": "Duplicate line items, aggregated qty exceeds stock",
     },
     {
         "invoice_number": "INV-1014",
@@ -173,6 +173,30 @@ GROUND_TRUTH = [
         "acceptable": ["rejected"],
         "expected_flags": ["out_of_stock"],
         "note": "WidgetC exists but zero stock",
+    },
+    {
+        "invoice_number": "INV-1017",
+        "expected_decision": "human_review",
+        "hard": True,
+        "acceptable": ["human_review", "rejected"],
+        "expected_flags": ["possible_vendor_match"],
+        "note": "Widgets lnc (lowercase L) fuzzy matches Widgets Inc. at high similarity, spoofing test",
+    },
+    {
+        "invoice_number": "INV-1018",
+        "expected_decision": "approved",
+        "hard": False,
+        "acceptable": ["approved", "human_review"],
+        "expected_flags": [],
+        "note": "$12,500 clean order from known vendor, exercises high value scrutiny path",
+    },
+    {
+        "invoice_number": "INV-1019",
+        "expected_decision": "human_review",
+        "hard": True,
+        "acceptable": ["human_review", "rejected"],
+        "expected_flags": ["stock_mismatch"],
+        "note": "WidgetA and WidgetB in stock, GadgetX x10 exceeds stock of 5, mixed result",
     },
 ]
 

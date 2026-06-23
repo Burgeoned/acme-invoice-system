@@ -68,7 +68,7 @@ APPROVAL_TOOLS = [
         "type": "function",
         "function": {
             "name": "get_vendor_profile",
-            "description": "Get the known profile for a vendor — typical items they supply, expected price ranges, typical order size, and any notes. Use this to check whether the current invoice looks normal for this vendor.",
+            "description": "Get the known profile for a vendor: typical items they supply, expected price ranges, typical order size, and any notes. Use this to check whether the current invoice looks normal for this vendor.",
             "parameters": {
                 "type": "object",
                 "properties": {

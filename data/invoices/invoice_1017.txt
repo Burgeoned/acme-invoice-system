@@ -1,0 +1,25 @@
+From: billing@widgetsinc.biz
+To: accounts@acmecorp.com
+Subject: Invoice INV-1017 - Widget Order
+
+Hi,
+
+Please find our invoice below.
+
+  Vendor: Widgets lnc
+  Invoice: INV-1017
+  Date: 2026-01-31
+  Due Date: 2026-03-02
+
+  Items:
+    WidgetA     x5    $250.00 each
+    WidgetB     x2    $500.00 each
+
+  Total: $2,250.00
+
+  Payment Terms: Net 30
+
+Thank you for your business.
+
+Accounts Receivable
+Widgets lnc
