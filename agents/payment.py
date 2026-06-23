@@ -67,9 +67,10 @@ def run(state: InvoiceState):
         return
 
     if state.decision != "approved":
-        # rejected or human_review, log and stop
+        # rejected or human_review, log and record so cross-session duplicate detection catches it
         state.payment_status = "skipped"
         write_audit_log(state)
+        record_processed(state)
         return
 
     # one more check: invoice must not be halted even if somehow approved

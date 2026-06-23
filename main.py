@@ -37,13 +37,13 @@ def run_batch() -> list[InvoiceState]:
         print(f"Invoice directory not found: {INVOICE_DIR}")
         return []
 
-    # sort by modified date so revised files come after originals
+    # newest first so revised invoices process before originals and win the duplicate check
     files = [
         os.path.join(INVOICE_DIR, f)
         for f in os.listdir(INVOICE_DIR)
         if os.path.splitext(f)[1].lower() in SUPPORTED_EXTENSIONS
     ]
-    files.sort(key=os.path.getmtime)
+    files.sort(key=os.path.getmtime, reverse=True)
 
     if not files:
         print(f"No supported invoice files found in {INVOICE_DIR}")

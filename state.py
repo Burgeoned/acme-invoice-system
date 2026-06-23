@@ -29,6 +29,7 @@ class InvoiceState:
     vendor: Optional[str] = None
     date: Optional[str] = None
     due_date: Optional[str] = None
+    payment_terms: Optional[str] = None
     currency: Optional[str] = None
     line_items: list[LineItem] = field(default_factory=list)
     total_amount: Optional[float] = None
@@ -93,6 +94,7 @@ class InvoiceState:
             "vendor": self.vendor,
             "date": self.date,
             "due_date": self.due_date,
+            "payment_terms": self.payment_terms,
             "currency": self.currency,
             "line_items": [
                 {

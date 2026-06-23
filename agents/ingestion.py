@@ -33,6 +33,7 @@ Return this exact structure:
   "vendor": "string or null",
   "date": "YYYY-MM-DD or null",
   "due_date": "YYYY-MM-DD or null",
+  "payment_terms": "e.g. Net 30, Net 60, Due on receipt, or null",
   "currency": "USD or other currency code, default to USD if not mentioned",
   "line_items": [
     {"item": "string", "quantity": number, "unit_price": number}
@@ -58,6 +59,7 @@ Extract invoice data from the text below into this exact structure:
   "vendor": "string or null",
   "date": "YYYY-MM-DD or null",
   "due_date": "YYYY-MM-DD or null",
+  "payment_terms": "e.g. Net 30, Net 60, Due on receipt, or null",
   "currency": "USD or other currency code",
   "line_items": [
     {"item": "string", "quantity": number, "unit_price": number}
@@ -166,6 +168,7 @@ def run(state: InvoiceState):
     state.vendor = extracted.get("vendor")
     state.date = extracted.get("date")
     state.due_date = extracted.get("due_date")
+    state.payment_terms = extracted.get("payment_terms")
     state.currency = extracted.get("currency", "USD")
     state.total_amount = extracted.get("total_amount")
     state.confidence = extracted.get("confidence", "low")

@@ -36,7 +36,7 @@ Every extraction gets a confidence score (high / medium / low). An invoice where
 Checks the extracted data against SQLite. Runs these checks in order:
 
 1. **Foreign currency** — if currency is not USD, flag for human review and stop. We can't safely approve without knowing exchange rate policy.
-2. **Duplicate invoice number** — if the invoice number has been seen before, keep only the latest file (by modified date) and discard the earlier one.
+2. **Duplicate invoice number** — batch files are sorted newest-first so revised invoices always process before originals. If a duplicate is detected mid-batch and the earlier version was already approved, the approval agent auto-rejects it as superseded — it never hits the human review queue. Cross-session duplicates (same invoice number as a prior run) go to human review unless the amounts match exactly, in which case they're rejected outright.
 3. **Vendor check** — three outcomes:
    - Exact match (case-insensitive) -> approved, continue
    - Known bad actor (in table, approved = 0) -> halt immediately, auto-reject
@@ -178,8 +178,11 @@ Hard price matching rejects legitimate invoices — rush orders run at a markup,
 **Why snapshot stock in batch mode**
 Each invoice is checked against DB stock independently. In a real system you'd have stock reservations, but for a prototype that introduces non-determinism in tests — the first invoice to run would affect every one after it. Snapshot keeps the evals consistent.
 
-**Why sort batch files by modified date**
-Alphabetical sort is coincidentally correct for most test invoices but breaks down for revised invoices. INV-1004 and INV-1004_revised have the same invoice number — sorting by modified date means the revised file always comes second, gets caught by the duplicate check, and the correct version (the one that was processed first, which is the older original) is kept. If we wanted to keep the latest revision instead we'd reverse the sort and let the revised one process first.
+**Why sort batch files by modified date (newest first)**
+Alphabetical sort breaks down for revised invoices. INV-1004 and INV-1004_revised have the same invoice number — sorting newest-first means the revised file processes first and wins. When the older original comes up next, it gets caught as a duplicate of an already-approved invoice and is auto-rejected as superseded, so it never hits the human review queue. The AP team only sees the version that should actually be paid.
+
+**Why we don't allow in-tool amount corrections**
+AP staff can reject an invoice with a reason and request a corrected resubmission from the vendor. We don't let anyone edit extracted fields (amount, line items) directly in the tool. Any correction to financial data should come from the source — the vendor — not from a number someone typed into an internal tool. The audit trail is cleaner, the liability stays where it belongs, and we avoid the failure mode where a well-intentioned correction introduces a new error. Foreign currency invoices specifically get a hard block: converting EUR to USD requires an exchange rate policy decision, not a field edit.
 
 **Why run_single and run_batch are separate functions**
 The CLI uses them directly, but so does the UI. Exposing them as importable functions means the UI can call them in-process and get results back as Python objects rather than having to spawn a subprocess and parse stdout.
@@ -197,7 +200,8 @@ The CLI uses them directly, but so does the UI. Exposing them as importable func
 
 **Validation**
 - Foreign currency -> flag for human review, stop processing
-- Duplicate invoice number -> keep latest file only, discard earlier
+- Duplicate invoice number in same batch -> newest file wins, older version auto-rejected as superseded if newer was approved
+- Duplicate invoice number cross-session -> human review, UI shows original decision and date for context
 - Item name casing differences -> case-insensitive DB query
 - Same item multiple times on one invoice -> aggregate quantities before stock check
 - Negative quantity -> data integrity flag
@@ -225,35 +229,52 @@ Built in Streamlit. Designed for AP team members, not engineers — the goal is 
 
 **Layout:**
 
-Three metric cards at the top — approved (green), rejected (red), needs review (yellow). The needs review count is the number the AP person cares about most, so it's prominent.
+The primary view is the action queue. Invoices that need a human decision come first — that's the job. Below that, summary metrics (approved count, rejected count, needs review count, total auto-processed value). The "already handled" list is collapsed by default and there for auditing, not daily use.
 
-Below that, two sections:
+Single invoice mode is a separate tab — file upload, run, result shows immediately with the same detail view.
 
-- Needs your attention — human review invoices front and center, this is their to-do list
-- Already handled — approved and rejected, collapsed by default, there if they want to audit
+**Review cards:**
 
-Single invoice mode is a separate tab — file upload, run button, result shows immediately.
+Each invoice needing action shows vendor, invoice number, amount, and the single most important flag in plain English — everything the reviewer needs to make a call without clicking into anything. Actions are inline on the card:
 
-Clicking any invoice row opens a detail view with full flags, Grok's reasoning, and payment result.
+- Approve — one click, immediate
+- Reject — two-step: click Reject, enter a reason, confirm. Prevents accidental rejections.
+- Details — toggles a full detail panel below the card
+
+**Detail panel:**
+
+Two columns: left is extracted fields, line items, flags (in plain English), and AI reasoning. Right is the original invoice file — PDFs render embedded, text formats render as a code block. The reviewer sees exactly what the system was working with.
+
+**Revised invoices:**
+
+When an invoice is flagged as a duplicate but the amount differs from the original, the UI surfaces this as a possible revision rather than a plain duplicate. It shows what happened to the original (approved/rejected, when) and what the amount difference is.
+
+- If the original was already approved and paid: a hard warning blocks action and directs to finance for reconciliation. The "Accept Revision" button does not appear — you cannot pay twice without a manual review.
+- If the original was rejected (no payment sent): an "Accept Revision" button appears. It strips the duplicate flag, clears the halt, and runs payment on the revised version.
+
+In same-batch processing this is handled automatically: newest file processes first and wins. The older original gets auto-rejected as superseded if the newer version was already approved — it never hits the human review queue.
 
 **Manual approval:**
 
-AP staff can approve or reject human review invoices directly from the UI. Rejections require a short reason. On approval the system clears the halt, skips re-validation (the human saw the flags and made the call), runs payment, writes the audit log, and records in processed_invoices. On rejection a reason is required — the UI enforces this, and main.py raises a ValueError if an empty reason is passed programmatically.
+On approval the system clears the halt, skips re-validation (the human saw the flags and made the call), runs payment, writes the audit log, and records in processed_invoices. On rejection a reason is required — the UI enforces this, and main.py raises a ValueError if an empty reason is passed programmatically.
 
-Session state is managed via Streamlit's st.session_state so batch results persist across interactions — clicking approve on one invoice doesn't lose the rest.
+Session state is managed via st.session_state so batch results persist across interactions — actioning one invoice doesn't lose the rest. The "already handled" section has a Details toggle on every row so approved and rejected invoices are fully auditable without leaving the page.
 
 ---
 
 ## Above and Beyond
 
 - Extraction confidence score on every ingestion — surfaces how reliable the parse was
-- Vendor whitelist table — catches a fraud signal the minimum schema misses
+- Vendor whitelist with fuzzy matching — exact match, bad actor detection, and similarity threshold catches typos and spoofed vendor names
 - Three-table schema — separates item existence from stock levels for cleaner validation messages
 - Price variance check with tolerance threshold — flags outliers for Grok rather than hard-rejecting
-- Batch mode + business metrics — run all invoices at once, see approval rate, fraud rate, and total dollar value auto-processed
-- Foreign currency detection — flags non-USD invoices for human review
-- Cross-session duplicate detection — processed_invoices table catches duplicate invoice numbers even across separate runs
-- Interactive UI with manual approval — AP team can action human review invoices without leaving the tool
+- Batch mode with business metrics — run all invoices at once, see approval count, rejection count, and total auto-processed value
+- Foreign currency detection — flags non-USD invoices for human review rather than silently failing
+- Cross-session duplicate detection — processed_invoices table catches duplicate invoice numbers across separate runs
+- Revised invoice handling — newest file wins in same-batch processing; older originals are auto-rejected as superseded without hitting the review queue
+- Interactive UI with inline approval — AP team can approve, reject (with required reason), or accept a revision without leaving the tool
+- Original invoice viewer — detail panel embeds the actual invoice file so reviewers see exactly what was processed
+- Revision detection — UI distinguishes between a true duplicate and a revised invoice by comparing amounts, and blocks action if the original was already paid
 
 ---
 
@@ -265,7 +286,7 @@ Session state is managed via Streamlit's st.session_state so batch results persi
 | INV-1002 | TXT | Typos throughout, 20x GadgetX (stock: 5) | Rejected — stock mismatch |
 | INV-1003 | TXT | Fake vendor, FakeItem, "URGENT wire transfer" | Rejected — fraud |
 | INV-1004 | JSON | Clean order with tax | Approved |
-| INV-1004 revised | JSON | Duplicate invoice number, newer file | Replaces INV-1004, processed as latest |
+| INV-1004 revised | JSON | Revised invoice, newer mtime, higher amount (GadgetX added) | Processed first (newest wins), INV-1004 original auto-rejected as superseded |
 | INV-1005 | JSON | $15,225 total, 8x GadgetX (stock: 5) | Rejected — stock mismatch |
 | INV-1006 | CSV | Key-value format, single item | Approved |
 | INV-1007 | CSV | $15,525 total, 20x WidgetA (stock: 15) | Rejected — stock mismatch |

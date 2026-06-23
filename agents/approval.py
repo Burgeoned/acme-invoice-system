@@ -166,6 +166,21 @@ def get_mock_decision(state: InvoiceState) -> dict:
     return MOCK_APPROVAL["approved"]
 
 
+def _original_was_approved(state: InvoiceState) -> bool:
+    """Check if the already-processed version of this invoice number was approved."""
+    try:
+        import sqlite3
+        conn = sqlite3.connect("inventory.db")
+        row = conn.execute(
+            "SELECT decision FROM processed_invoices WHERE invoice_number = ? AND file_path != ?",
+            (state.invoice_number, state.file_path),
+        ).fetchone()
+        conn.close()
+        return row is not None and row[0] == "approved"
+    except Exception:
+        return False
+
+
 def run(state: InvoiceState):
     if state.halted:
         if state.vendor_status == "bad_actor":
@@ -175,6 +190,10 @@ def run(state: InvoiceState):
             # halted due to a system error like file not found, not a business logic decision
             state.decision = "error"
             state.reasoning = state.halt_reason
+        elif state.has_flag("duplicate_invoice") and _original_was_approved(state):
+            # newer version already processed and approved in this batch, silently reject the old one
+            state.decision = "rejected"
+            state.reasoning = "Superseded by a newer version of this invoice that was already approved."
         else:
             # unknown vendor, possible match, foreign currency all need human eyes
             state.decision = "human_review"
