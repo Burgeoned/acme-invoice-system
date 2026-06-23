@@ -43,14 +43,18 @@ def check_vendor(state: InvoiceState, cursor):
     vendor_stripped = vendor.rstrip(".,;")
     names_stripped = [n.rstrip(".,;") for n in vendor_names]
 
-    match_idx, score, _ = process.extractOne(vendor_stripped, names_stripped, scorer=fuzz.ratio) if names_stripped else (None, 0, None)
-    match = vendor_names[names_stripped.index(match_idx)] if match_idx else None
+    result = process.extractOne(vendor_stripped, names_stripped, scorer=fuzz.ratio) if names_stripped else None
+    if result:
+        matched_stripped, score, match_pos = result
+        match = vendor_names[match_pos]
+    else:
+        match, score = None, 0
 
     if match and score >= FUZZY_MATCH_THRESHOLD:
         # found a close match but won't assume it's the same vendor, flag for human review
         state.vendor_status = "possible_match"
         state.possible_vendor_match = match
-        state.add_flag("possible_vendor_match", f"Vendor '{vendor}' not found but closely matches '{match}' (similarity: {score}%). Needs confirmation.")
+        state.add_flag("possible_vendor_match", f"Vendor '{vendor}' not found but closely matches '{match}' ({score:.0f}% similarity). Confirm identity before approving.")
         state.halt("Vendor requires human review, possible name mismatch")
     else:
         # never seen this vendor before

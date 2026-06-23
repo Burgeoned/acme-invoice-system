@@ -531,10 +531,25 @@ with tab_batch:
     with col_db:
         mk("gray")
         if st.button("Reset DB", use_container_width=True, help="Wipes processed_invoices and audit logs. Testing only."):
-            import subprocess, sys
-            subprocess.run([sys.executable, "setup_db.py"], check=True)
-            st.session_state.results = []
+            st.session_state.confirm_reset_db = True
             st.rerun()
+
+    if st.session_state.get("confirm_reset_db"):
+        st.warning("This will wipe all processed invoices and audit logs. Are you sure?")
+        c1, c2 = st.columns([1, 5])
+        with c1:
+            mk("red")
+            if st.button("Yes, reset", key="confirm_db_yes", use_container_width=True):
+                import subprocess, sys
+                subprocess.run([sys.executable, "setup_db.py"], check=True)
+                st.session_state.results = []
+                st.session_state.confirm_reset_db = False
+                st.rerun()
+        with c2:
+            mk("gray")
+            if st.button("Cancel", key="confirm_db_cancel", use_container_width=True):
+                st.session_state.confirm_reset_db = False
+                st.rerun()
 
     if st.session_state.get("results"):
         results = st.session_state.results
