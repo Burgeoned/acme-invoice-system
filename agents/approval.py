@@ -289,6 +289,17 @@ def run_grok_approval(state: InvoiceState):
         and not high_value
     )
 
+    # for simple cases, include vendor tier from DB so Grok doesn't misapply the
+    # first-time vendor rule — it won't call lookup_vendor_history in simple_case mode
+    vendor_context = ""
+    if simple_case and state.vendor:
+        history = _lookup_vendor_history(state.vendor)
+        try:
+            h = json.loads(history)
+            vendor_context = f"\nVendor context: {h.get('tier_note', '')} ({h.get('approved_count', 0)} prior approved invoices)"
+        except Exception:
+            pass
+
     def _xe(s: str) -> str:
         return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
 
@@ -302,7 +313,7 @@ Total: ${state.total_amount or 0}
 Line items: {_xe(format_line_items(state))}
 Flags from validation: {_xe(format_flags(state))}
 High value invoice (over $10,000): {high_value}
-Payment terms: {_xe(state.payment_terms or "not specified")}
+Payment terms: {_xe(state.payment_terms or "not specified")}{vendor_context}
 </invoice_data>
 
 {"Return your decision as JSON." if simple_case else "Use your tools to gather more context if needed, then return your decision as JSON."}"""
@@ -338,11 +349,28 @@ Payment terms: {_xe(state.payment_terms or "not specified")}
         if not msg.tool_calls:
             raw = (msg.content or "").strip()
 
-            # empty response is an API fluke — retry the whole call once rather than
-            # immediately routing to human review
+            # empty response is an API fluke — make one direct retry before giving up
+            # using continue here only works if there are rounds remaining, so we retry
+            # the call explicitly to handle simple_case (MAX_TOOL_ROUNDS=1) too
             if not raw:
-                state.add_error(f"Grok returned empty response on round {round_num + 1}, retrying")
-                continue
+                state.add_error(f"Grok returned empty response on round {round_num + 1}, retrying once")
+                try:
+                    retry_resp = client.chat.completions.create(
+                        model="grok-3",
+                        messages=messages,
+                        tools=APPROVAL_TOOLS if not simple_case else None,
+                        tool_choice="auto" if not simple_case else None,
+                        temperature=0,
+                    )
+                    raw = (retry_resp.choices[0].message.content or "").strip()
+                except Exception as e:
+                    state.add_error(f"Empty response retry also failed: {e}")
+                if not raw:
+                    state.add_error("Grok returned empty response on retry, routing to human review")
+                    state.decision = "human_review"
+                    state.decision_source = "system_error"
+                    state.reasoning = "Grok returned an empty response twice — API issue, not a decision. Routed to human review."
+                    return
 
             if raw.startswith("```"):
                 raw = raw.split("```")[1]
