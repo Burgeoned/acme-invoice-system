@@ -77,7 +77,7 @@ GROUND_TRUTH = [
         "hard": False,
         "acceptable": ["approved", "rejected", "human_review"],
         "expected_flags": [],
-        "note": "Two files with same invoice number. One gets approved, one flagged as duplicate. Either outcome passes.",
+        "note": "INV-1004 and INV-1004_revised share an invoice number. Revised file has newer mtime so it processes first, gets approved, original is auto-rejected as superseded. Either file passing is acceptable.",
     },
     {
         "invoice_number": "INV-1005",

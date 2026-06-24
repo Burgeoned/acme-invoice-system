@@ -95,8 +95,15 @@ Four possible outcomes: approved, rejected, human_review, error. Error is reserv
 
 ### Agent 4: Payment
 
-Approved -> mock_payment() -> log confirmation.
-Rejected -> log reason.
+Four paths:
+
+- Rejected or human_review -> skip payment, write audit log, record in DB so duplicate detection catches re-submissions
+- Halted or no decision set -> block, write audit log
+- Approved -> retry loop (up to 3 attempts). On success: write transaction result, mark "paid", record in DB. On failure after all retries: mark "payment_failed", record in DB with that status so the next run doesn't attempt payment again. AP team retries manually via the UI.
+
+Every outcome writes an immutable audit log. The audit log includes payment_attempts so you can see whether it succeeded on the first try or had to retry.
+
+The retry_payment() function in main.py handles manual retries. It clears the payment_failed DB record before retrying so duplicate detection doesn't block the attempt. On success the record is updated to "approved". On another failure it records as payment_failed again.
 
 Does a final state check before calling payment. If an invoice somehow reaches this stage without approval, it gets blocked here.
 

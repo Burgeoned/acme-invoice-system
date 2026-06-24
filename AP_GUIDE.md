@@ -111,6 +111,8 @@ If you need to reverse a rejection, click **Override** on the rejected invoice. 
 
 **If a vendor sends a revised invoice** with the same number but different amounts, the system flags it as a possible revision so you can compare both versions before deciding.
 
+**If a payment fails,** it shows up in a "Payment Failed" section at the top of the screen — above the review queue, so it doesn't get lost. This means the invoice was approved and the system tried to send payment, but the payment gateway returned an error (usually a network or timeout issue). Click **Retry Payment**, confirm with finance that no charge went through, then click **Confirm Retry**. The two-step process is intentional — you want to be sure before retrying so the vendor doesn't get paid twice.
+
 **If the AI approves an invoice from a vendor we haven't worked with before,** you'll see a warning in the detail view with an "Add to approved vendors" button. Review the invoice and the vendor, and if everything checks out, click the button to add them to our approved list. Future invoices from that vendor will process automatically without this extra step.
 
 **Approved invoices are logged automatically.** You don't need to do anything after clicking Approve. The payment confirmation and full invoice record are saved.

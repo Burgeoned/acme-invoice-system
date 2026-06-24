@@ -93,6 +93,10 @@ Then open `http://localhost:8501`.
 python eval.py
 ```
 
+**Testing payment failures:**
+
+Add `PAYMENT_FAIL_RATE=0.3` to `.env` to simulate 30% transient payment failures. The pipeline will retry up to 3 times, and if all fail it records the invoice as `payment_failed` in the DB and surfaces it in the UI with a Retry Payment button. Set back to 0 (or remove it) to return to normal operation.
+
 ---
 
 ## Test cases
