@@ -72,23 +72,26 @@ Invoices over $10K are flagged as high value in the prompt. If the first Grok ca
 
 Four possible outcomes: approved, rejected, human_review, error. Error is reserved for system failures like file not found or DB errors, distinct from rejected, so the AP team knows it needs a technical fix, not a business decision.
 
-**Flag types validation can raise:**
+**Hard reject flags (auto-rejected without calling Grok):**
+- bad_actor: vendor is on the blocked list
+- negative_quantity: line item has negative quantity
+- negative_total: invoice total is negative
+- missing_total: no total amount — can't process payment
+- missing_vendor: no vendor name — can't route payment
+- no_line_items: no items on the invoice — nothing to validate
+
+**Soft flags (passed to Grok for judgment):**
 - stock_mismatch: invoice quantity exceeds the authorized order limit
 - out_of_stock: item exists in catalog but is not available for ordering
 - unknown_item: item not in catalog at all
 - price_variance: invoice price deviates more than 15% from DB price
 - unknown_vendor: vendor not in approved list
 - possible_vendor_match: vendor not found but closely matches a known vendor (>=90% similarity)
-- bad_actor: vendor is on the blocked list
 - foreign_currency: invoice is not in USD
 - duplicate_invoice: invoice number already processed in this batch
-- negative_quantity: line item has negative quantity
-- negative_total: invoice total is negative
-- missing_total: invoice has no total amount
-- no_line_items: invoice has no line items
-- missing_vendor: no vendor name on invoice
 - low_confidence: Grok flagged extraction confidence as low
 - malformed_line_item: a line item could not be parsed
+- vendor_not_onboarded: Grok approved an unknown vendor — AP team needs to confirm before the vendor is added to the whitelist
 
 ### Agent 4: Payment
 
@@ -152,7 +155,8 @@ Approved supplier whitelist. Anything not in this table gets flagged.
 
 | column   | type    |
 |----------|---------|
-| name     | TEXT PK |
+| id       | INTEGER PK |
+| name     | TEXT UNIQUE |
 | approved | INTEGER |
 
 This is an addition beyond the minimum schema. Item-level checks catch bad quantities and unknown SKUs, but won't catch a spoofed vendor. The vendors table adds a second signal that the baseline schema misses.
@@ -187,7 +191,13 @@ Hard price matching rejects legitimate invoices. rush orders run at a markup, vo
 Each invoice is checked against the catalog independently. In a real PO-matching system you'd decrement authorized quantities as invoices are approved, but for a prototype that introduces non-determinism in tests. the first invoice to run would affect every one after it. Snapshot keeps the evals consistent.
 
 **Why sort batch files by modified date (newest first)**
-Alphabetical sort breaks down for revised invoices. INV-1004 and INV-1004_revised have the same invoice number. sorting newest-first means the revised file processes first and wins. When the older original comes up next, it gets caught as a duplicate of an already-approved invoice and is auto-rejected as superseded, so it never hits the human review queue. The AP team only sees the version that should actually be paid.
+Alphabetical sort breaks down for revised invoices. INV-1004 and INV-1004_revised have the same invoice number. sorting newest-first means the revised file processes first and wins. When the older original comes up next, it gets caught as a duplicate of an already-approved invoice and is auto-rejected as superseded, so it never hits the human review queue. The AP team only sees the version that should actually be paid. Filename is the tiebreaker when two files have identical mtime so the sort is always deterministic.
+
+**Why vendor onboarding is human-gated**
+When Grok auto-approves an invoice from an unknown vendor, payment goes through (Grok had enough confidence), but the vendor isn't added to the approved list. Instead a flag surfaces in the UI prompting AP to confirm the relationship first. When AP manually approves an invoice from an unknown vendor, they're already making a judgment call, so the vendor gets added to the whitelist at that point. This keeps onboarding human-confirmed rather than letting Grok unilaterally expand the vendor list.
+
+**Why audit logs use a timestamp suffix instead of overwriting**
+The first time an invoice is processed it writes a log. If an AP person manually approves it later (after a rejection, for example), that's a second pipeline run and a second log. Overwriting the first one would hide the original rejection from the audit trail. Timestamp suffix means every run produces an immutable record, and the full history is visible.
 
 **Why we don't allow in-tool amount corrections**
 AP staff can reject an invoice with a reason and request a corrected resubmission from the vendor. We don't let anyone edit extracted fields (amount, line items) directly in the tool. Any correction to financial data should come from the source. the vendor. not from a number someone typed into an internal tool. The audit trail is cleaner, the liability stays where it belongs, and we avoid the failure mode where a well-intentioned correction introduces a new error. Foreign currency invoices specifically get a hard block: converting EUR to USD requires an exchange rate policy decision, not a field edit.

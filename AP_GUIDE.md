@@ -75,12 +75,13 @@ When an invoice gets flagged, here's what each message means in plain terms:
 | Payment already sent for original | The original version was already paid | Do not approve here. Contact finance for a credit memo or supplemental invoice. |
 | Negative quantity or total | The numbers don't make sense — data error | Reject and ask vendor to resubmit |
 | Extraction confidence was low | The system had trouble reading this invoice clearly | Review the original document carefully before deciding |
+| Vendor approved but not yet on our list | The AI approved this invoice from a vendor we haven't formally onboarded | Confirm the vendor is legitimate and click "Add to approved vendors" in the detail view |
 
 ---
 
 ## The AI reasoning section
 
-When you open an invoice's details, you'll see an **AI reasoning** block. This is the system's explanation for why it made the decision it did — or why it flagged something for your review.
+When you open an invoice's details, you'll see an **AI reasoning** block. This is the system's explanation for why it made the decision it did — or why it flagged something for your review. You'll also see the **decision source** (whether this was decided by the AI automatically or manually by the AP team) and a **"What the AI looked up"** section that shows exactly which tools Grok called before making its decision — vendor history, item prices, vendor profile — and what it found. If the AI changed its initial decision during its self-review, that's flagged too.
 
 Read it, but use your judgment. The AI is good at pattern-matching and applying our policies, but you're the one who knows the business context. If the AI escalated something that you know is fine, you can approve it. That's why the button is there.
 
@@ -109,6 +110,8 @@ If you need to reverse a rejection, click **Override** on the rejected invoice. 
 **If the same invoice comes in twice,** the system catches it and routes the second one to your queue with a note about the original. This prevents duplicate payments.
 
 **If a vendor sends a revised invoice** with the same number but different amounts, the system flags it as a possible revision so you can compare both versions before deciding.
+
+**If the AI approves an invoice from a vendor we haven't worked with before,** you'll see a warning in the detail view with an "Add to approved vendors" button. Review the invoice and the vendor, and if everything checks out, click the button to add them to our approved list. Future invoices from that vendor will process automatically without this extra step.
 
 **Approved invoices are logged automatically.** You don't need to do anything after clicking Approve. The payment confirmation and full invoice record are saved.
 

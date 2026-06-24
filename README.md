@@ -12,10 +12,10 @@ Invoices come in from vendors in whatever format they use: PDF, JSON, CSV, XML, 
 
 1. **Ingestion** - reads any supported format, sends to Grok for structured extraction with a confidence score. Retries with a stricter prompt on parse failure. Cross-checks the stated total against the line item sum.
 2. **Validation** - deterministic checks against SQLite: vendor whitelist with fuzzy matching, item catalog, quantity limits, price variance, data integrity. No LLM, fully auditable.
-3. **Approval** - Grok agent with tool calling. Calls `lookup_vendor_history`, `get_vendor_profile`, and `get_item_price` to gather context before deciding. Simple invoices from known vendors skip the tool loop entirely. Self-critique pass reviews the decision before it's finalized.
-4. **Payment** - mock payment API on approval, audit log on every outcome regardless of decision.
+3. **Approval** - Grok agent with tool calling. Calls `lookup_vendor_history`, `get_vendor_profile`, and `get_item_price` to gather context before deciding. Applies tiered approval thresholds based on vendor history — trusted vendors (5+ approved invoices, no rejections) get a higher auto-approval limit than first-time vendors. Simple invoices from known vendors skip the tool loop entirely. Self-critique pass reviews the decision before it's finalized.
+4. **Payment** - mock payment API on approval. Every outcome writes an immutable audit log with decision source, Grok's tool call chain, and whether the critique changed the initial decision.
 
-**UI:** Streamlit interface for the AP team. Human review invoices surface front and center with inline approve/reject. Detail panel shows the original invoice file side by side with extracted fields and Grok's reasoning. Vendor spend breakdown in the summary.
+**UI:** Streamlit interface for the AP team. Human review invoices surface front and center with inline approve/reject. Detail panel shows the original invoice file side by side with extracted fields, Grok's reasoning, and every tool call it made. When AP staff manually approves an unknown vendor, they're automatically added to the approved vendor list. Vendor spend breakdown in the summary.
 
 ---
 
@@ -26,7 +26,6 @@ The easiest way to run the full stack:
 ```bash
 # add your API key to .env first
 echo "XAI_API_KEY=your_key_here" > .env
-echo "MOCK_GROK=true" >> .env
 
 docker compose up
 ```
@@ -109,7 +108,7 @@ python eval.py
 | INV-1004 revised | JSON | Same invoice number, updated amounts and items | Revised version wins, original superseded |
 | INV-1005 | JSON | $15K order, 8x GadgetX | Rejected |
 | INV-1006 | CSV | Single item, clean | Approved |
-| INV-1007 | CSV | $15K, 20x WidgetA | Human review |
+| INV-1007 | CSV | $15K, 20x WidgetA | Rejected |
 | INV-1008 | TXT | Unknown vendor, items not in catalog | Human review |
 | INV-1009 | JSON | Negative quantity, blank vendor | Rejected |
 | INV-1010 | TXT | Rush order, price variance | Grok decides |
@@ -118,7 +117,7 @@ python eval.py
 | INV-1013 | JSON | $22K, same item 3x at discount, aggregated check | Human review |
 | INV-1014 | XML | EUR invoice | Human review |
 | INV-1015 | CSV | Clean tabular format | Approved |
-| INV-1016 | JSON | WidgetC not available for ordering | Human review |
+| INV-1016 | JSON | WidgetC not available for ordering | Rejected |
 | INV-1017 | TXT | "Widgets lnc" - vendor name spoofing test | Human review |
 | INV-1018 | JSON | $12,500 clean order, high value scrutiny path | Approved |
 | INV-1019 | CSV | Mixed: some items available, GadgetX over limit | Human review |
@@ -147,9 +146,13 @@ Run `python eval.py` to reproduce. It resets the database first for a clean run.
 
 **Validation is fully deterministic.** Every check is a DB query or arithmetic, no LLM. Fast, cheap, auditable. Grok only enters at extraction and approval where judgment is actually needed.
 
-**Approval agent uses tool calling.** Grok decides what context it needs before making a decision. Simple invoices (approved vendor, no flags, under threshold) skip the tool loop entirely and get a direct decision call — saves tokens on the easy ones. For complex cases Grok calls tools, then a self-critique pass reviews the decision.
+**Approval agent uses tool calling with tiered thresholds.** Grok decides what context it needs before making a decision. Approval thresholds scale with vendor history: first-time vendors (not on the approved list) get extra scrutiny above $5K, approved vendors with no prior invoice history get the standard $10K threshold, and trusted vendors with 5+ approved invoices and no rejections can be approved up to $25K. Simple invoices from known vendors skip the tool loop entirely. For complex cases Grok calls tools, then a self-critique pass reviews the decision.
 
-**Invoice data is sandboxed in prompts.** Vendor-supplied content is wrapped in XML tags and explicitly marked as untrusted. A malicious line item can't manipulate the model's instructions. And even if it could, Grok can only set a string field — Python's payment agent independently validates the decision before any money moves.
+**Audit trail is complete and immutable.** Every invoice gets a JSON audit log with the full decision chain: which tools Grok called, what they returned, the initial decision, whether the critique changed it, and whether the decision was automated or manual. Re-running an invoice appends a new log with a timestamp suffix instead of overwriting the old one.
+
+**Vendor onboarding is human-gated.** When AP staff manually approves an invoice from an unknown vendor, that vendor is automatically added to the approved list. When Grok auto-approves one, it flags it for AP review first — the system doesn't unilaterally onboard vendors without a human confirming the relationship.
+
+**Invoice data is sandboxed in prompts.** Vendor-supplied content is wrapped in XML tags with XML escaping, so a malicious line item containing `</invoice_data>` can't break the prompt boundary. And even if it could, Grok can only set a string field — Python's payment agent independently validates the decision before any money moves.
 
 **Inbox/archive workflow.** After each batch run, processed files move from `data/invoices/` to `data/processed/` automatically. New invoices go in the inbox, processed ones stay in the archive. No duplicates from re-running the same folder.
 
