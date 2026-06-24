@@ -18,14 +18,16 @@ def setup():
 
         cursor.execute("""
             CREATE TABLE items (
-                item       TEXT PRIMARY KEY,
+                id         INTEGER PRIMARY KEY,
+                item       TEXT NOT NULL UNIQUE,
                 unit_price REAL NOT NULL
             )
         """)
 
         cursor.execute("""
             CREATE TABLE inventory (
-                item  TEXT PRIMARY KEY,
+                id    INTEGER PRIMARY KEY,
+                item  TEXT NOT NULL UNIQUE,
                 stock INTEGER NOT NULL,
                 FOREIGN KEY (item) REFERENCES items(item)
             )
@@ -33,25 +35,26 @@ def setup():
 
         cursor.execute("""
             CREATE TABLE vendors (
-                name     TEXT PRIMARY KEY,
+                id       INTEGER PRIMARY KEY,
+                name     TEXT NOT NULL UNIQUE,
                 approved INTEGER NOT NULL
             )
         """)
 
-        # tracks every invoice that has been processed so duplicates get caught across sessions
         cursor.execute("""
             CREATE TABLE processed_invoices (
+                id             INTEGER PRIMARY KEY,
                 invoice_number TEXT NOT NULL,
                 file_path      TEXT NOT NULL,
                 vendor_name    TEXT,
                 decision       TEXT,
                 processed_at   TEXT NOT NULL,
-                PRIMARY KEY (invoice_number, file_path)
+                UNIQUE (invoice_number, file_path)
             )
         """)
 
         cursor.executemany(
-            "INSERT INTO items VALUES (?, ?)",
+            "INSERT INTO items (item, unit_price) VALUES (?, ?)",
             [
                 ("WidgetA",  250.00),
                 ("WidgetB",  500.00),
@@ -62,7 +65,7 @@ def setup():
         )
 
         cursor.executemany(
-            "INSERT INTO inventory VALUES (?, ?)",
+            "INSERT INTO inventory (item, stock) VALUES (?, ?)",
             [
                 ("WidgetA",  15),
                 ("WidgetB",  10),
@@ -73,7 +76,7 @@ def setup():
         )
 
         cursor.executemany(
-            "INSERT INTO vendors VALUES (?, ?)",
+            "INSERT INTO vendors (name, approved) VALUES (?, ?)",
             [
                 ("Widgets Inc.",                 1),
                 ("Gadgets Co.",                  1),
