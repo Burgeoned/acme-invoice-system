@@ -1,21 +1,21 @@
 # Acme Invoice Processing
 
-Multi-agent pipeline that automates invoice processing end to end. ingestion, validation, approval, and payment. Built for Acme Corp's AP team to cut a 5-day, 30%-error-rate manual process down to seconds.
+Multi-agent pipeline that automates invoice processing end to end: ingestion, validation, approval, and payment. Built for Acme Corp's AP team to cut a 5-day, 30%-error-rate manual process down to seconds.
 
 ---
 
 ## What it does
 
-Invoices come in from vendors in whatever format they use. PDF, JSON, CSV, XML, plain text. The pipeline extracts structured data, checks it against inventory and vendor records, runs it through an approval agent that reasons with tools and a self-critique loop, and either processes payment or routes to the AP team for review.
+Invoices come in from vendors in whatever format they use: PDF, JSON, CSV, XML, plain text. The pipeline extracts structured data, checks it against vendor records and the item catalog, runs it through an approval agent that reasons with tools and a self-critique loop, and either processes payment or routes to the AP team for review.
 
 **Four agents:**
 
-1. **Ingestion** - reads any supported format, sends to Grok for structured extraction with a confidence score. Retries with a stricter prompt on parse failure.
-2. **Validation** - deterministic checks against SQLite: vendor whitelist with fuzzy matching, item catalog, stock levels, price variance, data integrity. No LLM, fully auditable.
-3. **Approval** - Grok agent with tool calling. Calls `lookup_vendor_history`, `get_vendor_profile`, and `get_item_price` to gather context before deciding. Self-critique loop: a second call reviews the first decision and can change it. Hard rules block fraud and data integrity failures before Grok is involved.
-4. **Payment** - mock payment API on approval, audit log on every outcome.
+1. **Ingestion** - reads any supported format, sends to Grok for structured extraction with a confidence score. Retries with a stricter prompt on parse failure. Cross-checks the stated total against the line item sum.
+2. **Validation** - deterministic checks against SQLite: vendor whitelist with fuzzy matching, item catalog, quantity limits, price variance, data integrity. No LLM, fully auditable.
+3. **Approval** - Grok agent with tool calling. Calls `lookup_vendor_history`, `get_vendor_profile`, and `get_item_price` to gather context before deciding. Simple invoices from known vendors skip the tool loop entirely. Self-critique pass reviews the decision before it's finalized.
+4. **Payment** - mock payment API on approval, audit log on every outcome regardless of decision.
 
-**UI:** Streamlit interface for the AP team. Human review invoices surface front and center with inline approve/reject. Detail panel shows the original invoice file side by side with extracted fields and Grok's reasoning.
+**UI:** Streamlit interface for the AP team. Human review invoices surface front and center with inline approve/reject. Detail panel shows the original invoice file side by side with extracted fields and Grok's reasoning. Vendor spend breakdown in the summary.
 
 ---
 
@@ -60,7 +60,7 @@ XAI_API_KEY=your_key_here
 MOCK_GROK=false
 ```
 
-Set `MOCK_GROK=true` to run without API calls. useful for testing and eval.
+Set `MOCK_GROK=true` to run without API calls — useful for testing and eval.
 
 Initialize the database:
 
@@ -82,6 +82,8 @@ python main.py --invoice_path data/invoices/invoice_1001.txt
 python main.py --batch
 ```
 
+After a batch run, processed files are automatically moved from `data/invoices/` to `data/processed/`. Drop new invoices in `data/invoices/` and run batch again — no duplicates, no manual cleanup.
+
 **Streamlit UI:**
 ```bash
 streamlit run ui.py --server.headless true
@@ -97,15 +99,15 @@ python eval.py
 
 ## Test cases
 
-16 invoices covering the main scenarios the pipeline needs to handle:
+19 invoices covering the main scenarios the pipeline needs to handle:
 
 | Invoice | Format | Scenario | Expected |
 |---------|--------|----------|----------|
-| INV-1001 | TXT | Clean order, normal stock | Approved |
-| INV-1002 | TXT | 20x GadgetX, only 5 in stock | Human review |
+| INV-1001 | TXT | Clean order, approved vendor | Approved |
+| INV-1002 | TXT | 20x GadgetX, exceeds authorized limit | Human review |
 | INV-1003 | TXT | Fraudster LLC, FakeItem, urgent wire transfer | Rejected |
 | INV-1004 | JSON | Clean order with tax | Approved |
-| INV-1004 revised | JSON | Same invoice number, updated amounts | Revised version wins, original superseded |
+| INV-1004 revised | JSON | Same invoice number, updated amounts and items | Revised version wins, original superseded |
 | INV-1005 | JSON | $15K order, 8x GadgetX | Human review |
 | INV-1006 | CSV | Single item, clean | Approved |
 | INV-1007 | CSV | $15K, 20x WidgetA | Human review |
@@ -113,24 +115,27 @@ python eval.py
 | INV-1009 | JSON | Negative quantity, blank vendor | Rejected |
 | INV-1010 | TXT | Rush order, price variance | Grok decides |
 | INV-1011 | PDF | Clean, well-structured | Approved |
-| INV-1012 | PDF | OCR artifacts | Approved |
-| INV-1013 | JSON | $22K, same item 3x at volume discount | Human review |
+| INV-1012 | PDF | OCR artifacts, item name normalization | Approved |
+| INV-1013 | JSON | $22K, same item 3x at discount, aggregated check | Human review |
 | INV-1014 | XML | EUR invoice | Human review |
 | INV-1015 | CSV | Clean tabular format | Approved |
-| INV-1016 | JSON | WidgetC exists but zero stock | Human review |
+| INV-1016 | JSON | WidgetC not available for ordering | Human review |
+| INV-1017 | TXT | "Widgets lnc" - vendor name spoofing test | Human review |
+| INV-1018 | JSON | $12,500 clean order, high value scrutiny path | Approved |
+| INV-1019 | CSV | Mixed: some items available, GadgetX over limit | Human review |
 
 ---
 
 ## Eval results (mock mode)
 
 ```
-Hard assertions (deterministic):  8/8  (100%)
-Soft assertions (grok may vary):  8/8  (100%)
-Overall:                          16/16
+Hard assertions (deterministic):  10/10  (100%)
+Soft assertions (grok may vary):   9/9  (100%)
+Overall:                          19/19  (100%)
 
 False negatives (bad invoice approved):  0
 False positives (clean invoice flagged): 0
-Auto-processing rate:                   88%
+Auto-processing rate:                   85%
 ```
 
 Run `python eval.py` to reproduce. It resets the database first for a clean run.
@@ -139,17 +144,19 @@ Run `python eval.py` to reproduce. It resets the database first for a clean run.
 
 ## Design decisions
 
-A few choices worth knowing about:
-
 **No LangGraph or CrewAI.** The flow is always linear. A routing framework solves a problem this pipeline doesn't have and adds surface area for things to break.
 
 **Validation is fully deterministic.** Every check is a DB query or arithmetic, no LLM. Fast, cheap, auditable. Grok only enters at extraction and approval where judgment is actually needed.
 
-**Approval agent uses tool calling.** Grok decides what context it needs before making a decision. For a price variance flag it calls `get_item_price` to see the actual delta. For an unfamiliar vendor it calls `lookup_vendor_history`. A self-critique pass then reviews whether the tool findings supported the decision.
+**Approval agent uses tool calling.** Grok decides what context it needs before making a decision. Simple invoices (approved vendor, no flags, under threshold) skip the tool loop entirely and get a direct decision call — saves tokens on the easy ones. For complex cases Grok calls tools, then a self-critique pass reviews the decision.
 
-**Human review is intentional.** The pipeline defaults to human review when uncertain rather than guessing. Stock issues, unknown vendors, and price variances that Grok cannot confidently resolve go to the AP team's queue. In production with a fully populated vendor whitelist the queue shrinks considerably. Most of the human reviews in the test batch are from vendors not yet onboarded to the whitelist.
+**Invoice data is sandboxed in prompts.** Vendor-supplied content is wrapped in XML tags and explicitly marked as untrusted. A malicious line item can't manipulate the model's instructions. And even if it could, Grok can only set a string field — Python's payment agent independently validates the decision before any money moves.
 
-**No in-tool amount corrections.** AP staff reject with a reason and request a corrected resubmission from the vendor. Letting someone edit a financial field in an internal tool creates audit risk that is harder to trace than the original problem.
+**Inbox/archive workflow.** After each batch run, processed files move from `data/invoices/` to `data/processed/` automatically. New invoices go in the inbox, processed ones stay in the archive. No duplicates from re-running the same folder.
+
+**Human review is intentional.** The pipeline defaults to human review when uncertain. In production with a fully populated vendor whitelist, most of the queue shrinks. The test batch has vendors not yet onboarded, which accounts for most of the human review cases.
+
+**No in-tool amount corrections.** AP staff reject and request a corrected resubmission from the vendor. Editing financial data in an internal tool creates audit risk that's harder to trace than the original problem.
 
 Full design rationale in [DESIGN.md](DESIGN.md).
 
@@ -159,19 +166,21 @@ Full design rationale in [DESIGN.md](DESIGN.md).
 
 ```
 agents/
-  ingestion.py     reads invoice files, calls Grok for structured extraction
-  validation.py    checks extracted data against SQLite
-  approval.py      Grok agent with tool calling and self-critique loop
-  payment.py       mock payment, audit logging, records to DB
+  ingestion.py     reads files, calls Grok for extraction, cross-checks totals
+  validation.py    deterministic checks against SQLite
+  approval.py      Grok agent with tool calling and self-critique
+  payment.py       mock payment, audit log, records to DB
 
-data/invoices/     16 test invoices in various formats
+data/invoices/     invoice inbox (processed files move to data/processed/)
+data/processed/    archive after each batch run (gitignored)
 logs/              per-invoice audit logs (gitignored)
 
-main.py            orchestrator, CLI, importable run_single and run_batch
+main.py            orchestrator, CLI, run_single and run_batch
 ui.py              Streamlit UI for the AP team
-eval.py            runs all test invoices and reports accuracy and cost metrics
+eval.py            test suite, 19 invoices, accuracy and cost metrics
 setup_db.py        creates and seeds inventory.db
 company_context.py AP policies and vendor profiles for the approval agent
-state.py           InvoiceState dataclass passed between agents
-DESIGN.md          full design doc with rationale for every decision
+state.py           InvoiceState dataclass shared between agents
+DESIGN.md          full design doc
+AP_GUIDE.md        plain-language guide for the AP team
 ```

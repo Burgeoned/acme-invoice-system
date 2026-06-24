@@ -191,6 +191,9 @@ AP staff can reject an invoice with a reason and request a corrected resubmissio
 **Why run_single and run_batch are separate functions**
 The CLI uses them directly, but so does the UI. Exposing them as importable functions means the UI can call them in-process and get results back as Python objects rather than having to spawn a subprocess and parse stdout.
 
+**Why batch archiving is on by default but eval skips it**
+After each batch run, processed files move from data/invoices/ to data/processed/. This prevents the same file from re-entering the queue on the next run and flooding the human review queue with cross-session duplicates. Eval passes archive=False so the test invoices stay in place across multiple eval runs without needing to be manually restored.
+
 ---
 
 ## Edge Cases
@@ -268,17 +271,21 @@ Session state is managed via st.session_state so batch results persist across in
 
 ## Above and Beyond
 
-- Extraction confidence score on every ingestion. surfaces how reliable the parse was
-- Vendor whitelist with fuzzy matching. exact match, bad actor detection, and similarity threshold catches typos and spoofed vendor names
-- Three-table schema. separates item existence from stock levels for cleaner validation messages
-- Price variance check with tolerance threshold. flags outliers for Grok rather than hard-rejecting
-- Batch mode with business metrics. run all invoices at once, see approval count, rejection count, and total auto-processed value
-- Foreign currency detection. flags non-USD invoices for human review rather than silently failing
-- Cross-session duplicate detection. processed_invoices table catches duplicate invoice numbers across separate runs
-- Revised invoice handling. newest file wins in same-batch processing; older originals are auto-rejected as superseded without hitting the review queue
-- Interactive UI with inline approval. AP team can approve, reject (with required reason), or accept a revision without leaving the tool
-- Original invoice viewer. detail panel embeds the actual invoice file so reviewers see exactly what was processed
-- Revision detection. UI distinguishes between a true duplicate and a revised invoice by comparing amounts, and blocks action if the original was already paid
+- Extraction confidence score on every ingestion — surfaces how reliable the parse was, and cross-checks stated total against line item sum
+- Vendor whitelist with fuzzy matching — exact match, bad actor detection, and 90% similarity threshold catches typos and spoofed vendor names
+- Three-table schema — separates item existence from quantity limits for cleaner, more actionable validation messages
+- Price variance check with 15% tolerance — flags outliers for Grok rather than hard-rejecting, allowing legitimate rush order markups
+- Dynamic tool loop in approval — simple invoices skip tool calls entirely, complex ones get up to 3 rounds with vendor history, item prices, and vendor profiles
+- Prompt injection guardrails — invoice data wrapped in XML tags and explicitly marked untrusted; Python payment agent independently validates decision before money moves
+- Inbox/archive workflow — processed files automatically move to data/processed/ after each batch, preventing duplicate re-processing
+- Batch mode with business metrics — total auto-processed value, vendor spend breakdown, approval/rejection counts
+- Foreign currency detection — flags non-USD invoices for human review rather than silently failing
+- Cross-session duplicate detection — processed_invoices table catches duplicate invoice numbers across separate runs
+- Revised invoice handling — newest file wins in same-batch processing; older originals are auto-rejected as superseded
+- Interactive UI with inline approval — AP team can approve, reject with a required reason, or accept a revision without leaving the tool
+- Original invoice viewer — detail panel embeds the actual invoice file so reviewers see exactly what the system was working with
+- Revision detection — UI distinguishes between a true duplicate and a revised invoice by comparing amounts, blocks action if the original was already paid
+- Docker support — full stack runs with docker compose up, DB and logs persist via volume mounts
 
 ---
 
