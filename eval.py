@@ -247,7 +247,7 @@ def run_eval():
     print()
 
     start_time = time.time()
-    results = run_batch()
+    results = run_batch(archive=False)  # keep test invoices in place
     total_time = time.time() - start_time
 
     if not results:

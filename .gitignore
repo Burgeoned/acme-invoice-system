@@ -13,5 +13,8 @@ inventory.db
 # Logs
 logs/
 
+# Processed invoice archive (inbox/archive workflow)
+data/processed/
+
 # VS Code
 .vscode/

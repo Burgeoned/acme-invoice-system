@@ -1,11 +1,14 @@
 import argparse
 import os
+import shutil
 from collections import defaultdict
+from datetime import datetime
 
 from state import InvoiceState
 from agents import ingestion, validation, approval, payment
 
 INVOICE_DIR = "data/invoices"
+PROCESSED_DIR = "data/processed"
 
 # file extensions we know how to process
 SUPPORTED_EXTENSIONS = {".txt", ".json", ".csv", ".xml", ".pdf"}
@@ -22,6 +25,24 @@ def print_invoice_result(state: InvoiceState):
     print(f"{invoice_id:<20} {vendor:<26} {amount:<12} {decision:<14} {flags}")
 
 
+def archive_invoice(file_path: str):
+    """Move a processed invoice file from the inbox to data/processed/.
+    If a file with the same name already exists there, adds a timestamp suffix."""
+    os.makedirs(PROCESSED_DIR, exist_ok=True)
+    filename = os.path.basename(file_path)
+    dest = os.path.join(PROCESSED_DIR, filename)
+
+    if os.path.exists(dest):
+        name, ext = os.path.splitext(filename)
+        stamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+        dest = os.path.join(PROCESSED_DIR, f"{name}_{stamp}{ext}")
+
+    try:
+        shutil.move(file_path, dest)
+    except Exception as e:
+        print(f"Warning: could not archive {file_path}: {e}")
+
+
 def run_single(file_path: str) -> InvoiceState:
     state = InvoiceState(file_path=file_path)
 
@@ -33,7 +54,7 @@ def run_single(file_path: str) -> InvoiceState:
     return state
 
 
-def run_batch() -> list[InvoiceState]:
+def run_batch(archive: bool = True) -> list[InvoiceState]:
     if not os.path.exists(INVOICE_DIR):
         print(f"Invoice directory not found: {INVOICE_DIR}")
         return []
@@ -54,12 +75,15 @@ def run_batch() -> list[InvoiceState]:
         by_stem[stem].append(f)
 
     files = []
+    discarded = []  # files skipped by stem dedup (e.g. .txt when .pdf exists for same invoice)
     for stem, group in by_stem.items():
         if len(group) == 1:
             files.append(group[0])
         else:
             pdfs = [f for f in group if f.lower().endswith(".pdf")]
-            files.append(max(pdfs, key=os.path.getmtime) if pdfs else max(group, key=os.path.getmtime))
+            chosen = max(pdfs, key=os.path.getmtime) if pdfs else max(group, key=os.path.getmtime)
+            files.append(chosen)
+            discarded.extend(f for f in group if f != chosen)
 
     # newest first so revised invoices process before originals and win the duplicate check
     files.sort(key=os.path.getmtime, reverse=True)
@@ -67,6 +91,11 @@ def run_batch() -> list[InvoiceState]:
     if not files:
         print(f"No supported invoice files found in {INVOICE_DIR}")
         return []
+
+    # archive the deduped-out files so they don't sit in the inbox forever
+    if archive:
+        for f in discarded:
+            archive_invoice(f)
 
     # shared across all invoices in the batch so duplicates get caught
     seen_invoice_numbers = set()
@@ -80,6 +109,8 @@ def run_batch() -> list[InvoiceState]:
             approval.run(state)
             payment.run(state)
             results.append(state)
+            if archive:
+                archive_invoice(file_path)
         except Exception as e:
             # one bad file shouldnt kill the whole batch
             print(f"Unexpected error processing {file_path}: {e}")
@@ -87,6 +118,8 @@ def run_batch() -> list[InvoiceState]:
             state.add_error(f"Unexpected pipeline error: {e}")
             state.halt(f"Unexpected pipeline error: {e}")
             results.append(state)
+            if archive:
+                archive_invoice(file_path)  # archive even on error so it doesn't loop forever
 
     return results
 
