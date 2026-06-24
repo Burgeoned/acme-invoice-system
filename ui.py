@@ -156,12 +156,28 @@ def flag_summary(state: InvoiceState) -> str:
     return state.flags[0].message
 
 
+def _resolve_file_path(file_path: str) -> str:
+    """Return the actual path to an invoice file, checking the archive if not in the inbox."""
+    if not file_path:
+        return file_path
+    if os.path.exists(file_path):
+        return file_path
+    # batch run archives files to data/processed/ — check there too
+    filename = os.path.basename(file_path)
+    archived = os.path.join("data", "processed", filename)
+    if os.path.exists(archived):
+        return archived
+    return file_path  # return original so the "not found" message shows the right path
+
+
 def render_invoice_file(file_path: str, label: str = "Original invoice"):
     if label:
         st.markdown(f"**{label}**")
-    if not file_path or not os.path.exists(file_path):
+    resolved = _resolve_file_path(file_path)
+    if not resolved or not os.path.exists(resolved):
         st.caption("File not available")
         return
+    file_path = resolved
 
     ext = os.path.splitext(file_path)[1].lower()
     if ext == ".pdf":
@@ -279,7 +295,8 @@ def show_invoice_fields(state: InvoiceState):
         # surface if critique flipped the decision — meaningful signal for reviewers
         if getattr(state, "critique_changed", False) and getattr(state, "initial_decision", None):
             st.caption(f"⚠️ AI initially decided **{state.initial_decision}** — self-critique revised to **{state.decision}**")
-        st.info(state.reasoning)
+        # escape $ so Streamlit doesn't treat them as LaTeX math delimiters
+        st.info(state.reasoning.replace("$", "\\$"))
 
     # decision source label
     source = getattr(state, "decision_source", None)
