@@ -143,7 +143,7 @@ Run `python eval.py` to reproduce. It resets the database first for a clean run.
 
 ## Design decisions
 
-**No LangGraph or CrewAI.** The flow is always linear. A routing framework solves a problem this pipeline doesn't have and adds surface area for things to break.
+**No LangGraph or CrewAI.** Not because the flow is linear — orchestration frameworks solve real problems (checkpointing, retries, human-in-the-loop as a primitive) and this pipeline has those problems. The call was to solve them directly. InvoiceState is the checkpoint object, halt and stage tracking live on it, retry logic is per-agent. Full orchestration is about 20 lines in main.py. A framework here adds a dependency without adding capability at this scale. If the pipeline grows into parallel branches or distributed execution, LangGraph becomes the right choice.
 
 **Validation is fully deterministic.** Every check is a DB query or arithmetic, no LLM. Fast, cheap, auditable. Grok only enters at extraction and approval where judgment is actually needed.
 

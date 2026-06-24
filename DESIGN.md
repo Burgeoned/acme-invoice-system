@@ -17,7 +17,9 @@ Four agents in a fixed sequence. Each one reads from and writes to a shared Invo
 
 Invoice file -> Ingestion -> Validation -> Approval -> Payment -> Output
 
-I didn't use LangGraph or CrewAI. The flow is always linear, there's no dynamic routing or agent collaboration happening here. An orchestration framework solves a problem this system doesn't have, and adds surface area for things to break.
+Each invoice gets its own InvoiceState, created fresh at the start of run_single. The agents run sequentially on that object. No two agents ever touch the same state at the same time, so there's no locking needed. The only shared resource across invoices is SQLite, which handles its own concurrency. If we parallelized batch processing with threads, each thread would still get its own state object — the only thing that would need attention is enabling WAL mode on the DB so readers and writers don't block each other.
+
+I didn't use LangGraph or CrewAI. The reasoning isn't that the flow is linear — orchestration frameworks solve a real problem (checkpointing, retries, observability, human-in-the-loop as a primitive) and this pipeline has that problem. The choice was to solve it directly instead of through a framework. InvoiceState is the checkpoint object. halted and mark_stage_complete track where we are. Retry logic lives in the agents that need it. The full orchestration is about 20 lines in main.py. At this scale a framework adds a dependency and indirection without adding capability. If the pipeline grows — parallel branches, more agents, distributed execution — LangGraph is the right call at that point.
 
 ---
 
@@ -162,7 +164,7 @@ Two distinct states: a vendor not in this table is unknown (never seen before, f
 ## Design Decisions
 
 **Why not LangGraph/CrewAI**
-Fixed sequential pipeline. A routing framework doesn't add anything here and makes the code harder to follow.
+Not because the flow is linear. Orchestration frameworks solve a real problem and this pipeline has that problem. We just solve it directly. InvoiceState is the checkpoint. halted and mark_stage_complete track progress. Retry logic is in the agents that need it. Total orchestration is about 20 lines in main.py. A framework at this scale adds a dependency without adding capability. If this grows into parallel branches or distributed execution, LangGraph is the right answer then.
 
 **Why SQLite**
 Zero setup, single file, runs locally. Simulates a legacy inventory system without needing a server.
