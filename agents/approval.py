@@ -337,6 +337,13 @@ Payment terms: {_xe(state.payment_terms or "not specified")}
         # no tool calls means grok is done investigating, extract the decision
         if not msg.tool_calls:
             raw = (msg.content or "").strip()
+
+            # empty response is an API fluke — retry the whole call once rather than
+            # immediately routing to human review
+            if not raw:
+                state.add_error(f"Grok returned empty response on round {round_num + 1}, retrying")
+                continue
+
             if raw.startswith("```"):
                 raw = raw.split("```")[1]
                 if raw.startswith("json"):

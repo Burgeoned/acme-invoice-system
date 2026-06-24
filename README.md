@@ -160,7 +160,11 @@ Run `python eval.py` to reproduce. It resets the database first for a clean run.
 
 **Inbox/archive workflow.** After each batch run, processed files move from `data/invoices/` to `data/processed/` automatically. New invoices go in the inbox, processed ones stay in the archive. No duplicates from re-running the same folder.
 
-**Human review is intentional.** The pipeline defaults to human review when uncertain. In production with a fully populated vendor whitelist, most of the queue shrinks. The test batch has vendors not yet onboarded, which accounts for most of the human review cases.
+**Human review is intentional.** The pipeline defaults to human review when uncertain. The queue size depends heavily on where the system is in its lifecycle.
+
+**Cold start behavior.** On a fresh database every vendor starts with zero invoice history, so the approval agent applies the most conservative threshold ($10K) to everyone on the approved list. In testing this produces 10-13 human reviews out of 20 invoices. This is expected and correct — the system doesn't know these vendors yet.
+
+**After warm-up.** Once vendors accumulate 5+ approved invoices with no rejections, they move into the trusted tier and the threshold rises to $25K. In testing with seeded history, auto-approvals increase and the human review queue drops. Run `python seed_vendor_history.py` to simulate a warm-start state for demo purposes. In production this happens naturally as invoices are processed.
 
 **No in-tool amount corrections.** AP staff reject and request a corrected resubmission from the vendor. Editing financial data in an internal tool creates audit risk that's harder to trace than the original problem.
 

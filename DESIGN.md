@@ -194,6 +194,13 @@ The minimum schema merges item existence and stock levels into one table. Separa
 **Why 15% price tolerance**
 Hard price matching rejects legitimate invoices. rush orders run at a markup, volume orders come with discounts. 15% captures both without letting through significant price gouging. Anything over the threshold doesn't auto-reject; it gets flagged and Grok reasons about it in approval.
 
+**Cold start behavior and warm-up**
+On a fresh database every vendor has zero invoice history, so the approval agent applies the most conservative threshold to all of them. Approved vendors with no history get the standard $10K threshold. This produces a larger-than-usual human review queue on first use.
+
+As the system processes invoices, vendor history builds. After 5+ approved invoices with no rejections, a vendor moves into the trusted tier and their threshold rises to $25K. The human review queue shrinks naturally as this happens.
+
+For demos or testing, `seed_vendor_history.py` pre-populates 6 prior approved invoices per vendor so you can see warm-start behavior without waiting for real history to accumulate. Run it after `setup_db.py`.
+
 **Why snapshot catalog limits in batch mode**
 Each invoice is checked against the catalog independently. In a real PO-matching system you'd decrement authorized quantities as invoices are approved, but for a prototype that introduces non-determinism in tests. the first invoice to run would affect every one after it. Snapshot keeps the evals consistent.
 
