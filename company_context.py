@@ -17,10 +17,17 @@ Payment Terms:
 - Due dates more than 60 days out are unusual and should be flagged.
 - "Urgent wire transfer" or "immediate payment required" language is a fraud signal regardless of vendor.
 
-Order Size:
-- Routine orders: $500 to $8,000. No additional scrutiny needed if vendor is approved.
-- Large orders: $8,000 to $10,000. Verify line items match a real business need.
-- High value: over $10,000. Requires explicit VP approval. Extra scrutiny on vendor and pricing.
+Order Size and Approval Thresholds:
+Use the lookup_vendor_history tool to determine the vendor's trust tier before deciding on any invoice near a threshold.
+
+- Routine orders: $500 to $8,000. Auto-approve if vendor is approved and items/pricing are in order.
+- Large orders: $8,000 to $10,000. Verify line items make sense. Approved vendor with clean history can be approved.
+- High value thresholds depend on vendor trust tier:
+  - New vendor (not on approved list, 0 prior invoices): human review for anything over $5,000.
+  - Approved vendor with no invoice history yet: standard $10K threshold applies.
+  - Establishing vendor (1–4 prior approved invoices): human review over $10,000.
+  - Trusted vendor (5+ prior approved invoices, no rejections): can approve up to $25,000 if items and pricing are clean.
+  - Any vendor with prior rejections in their history: revert to the $10,000 threshold regardless of approved invoice count.
 
 Rush Orders:
 - Rush or expedited delivery may carry up to 20% price markup. Acceptable if vendor is approved.

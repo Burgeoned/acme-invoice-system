@@ -44,6 +44,10 @@ class InvoiceState:
     # approval fills these in
     decision: Optional[str] = None
     reasoning: Optional[str] = None
+    decision_source: Optional[str] = None  # auto_grok, auto_reject, manual_approve, manual_reject, system_error
+    tool_findings: list = field(default_factory=list)  # [{tool, args, result}] from approval tool loop
+    initial_decision: Optional[str] = None  # pre-critique decision, to detect if critique changed anything
+    critique_changed: bool = False
 
     # payment fills these in
     payment_status: Optional[str] = None
@@ -111,7 +115,11 @@ class InvoiceState:
             "vendor_status": self.vendor_status,
             "possible_vendor_match": self.possible_vendor_match,
             "decision": self.decision,
+            "decision_source": self.decision_source,
             "reasoning": self.reasoning,
+            "tool_findings": self.tool_findings,
+            "initial_decision": self.initial_decision,
+            "critique_changed": self.critique_changed,
             "payment_status": self.payment_status,
             "payment_result": self.payment_result,
             "stage": self.stage,

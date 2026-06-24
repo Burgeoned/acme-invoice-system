@@ -51,16 +51,12 @@ def check_vendor(state: InvoiceState, cursor):
         match, score = None, 0
 
     if match and score >= FUZZY_MATCH_THRESHOLD:
-        # found a close match but won't assume it's the same vendor, flag for human review
         state.vendor_status = "possible_match"
         state.possible_vendor_match = match
         state.add_flag("possible_vendor_match", f"Vendor '{vendor}' not found but closely matches '{match}' ({score:.0f}% similarity). Confirm identity before approving.")
-        state.halt("Vendor requires human review, possible name mismatch")
     else:
-        # never seen this vendor before
         state.vendor_status = "unknown"
         state.add_flag("unknown_vendor", f"Vendor '{vendor}' is not in the approved vendor list")
-        state.halt("Unknown vendor, requires human review before processing")
 
 
 def check_items_and_stock(state: InvoiceState, cursor):
@@ -182,7 +178,7 @@ def run(state: InvoiceState, seen_invoice_numbers: set = None):
         cursor = conn.cursor()
 
         check_vendor(state, cursor)
-        if state.halted:
+        if state.halted:  # only halts for bad_actor now
             return
 
         check_items_and_stock(state, cursor)

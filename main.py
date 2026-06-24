@@ -1,11 +1,14 @@
 import argparse
 import os
 import shutil
+import sqlite3
 from collections import defaultdict
 from datetime import datetime
 
 from state import InvoiceState
 from agents import ingestion, validation, approval, payment
+
+DB_PATH = "inventory.db"
 
 INVOICE_DIR = "data/invoices"
 PROCESSED_DIR = "data/processed"
@@ -124,12 +127,36 @@ def run_batch(archive: bool = True) -> list[InvoiceState]:
     return results
 
 
+def onboard_vendor(vendor_name: str):
+    """Add a vendor to the approved list after AP staff manually approves their invoice."""
+    if not vendor_name:
+        return
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        conn.execute(
+            "INSERT OR IGNORE INTO vendors (name, approved) VALUES (?, 1)",
+            (vendor_name,)
+        )
+        conn.commit()
+        conn.close()
+    except sqlite3.Error:
+        pass  # don't crash the approval flow if DB write fails
+
+
 def manual_approve(state: InvoiceState) -> InvoiceState:
     # AP person reviewed the flags and decided to approve, trust them and run payment
     state.halted = False
     state.halt_reason = None
     state.decision = "approved"
+    state.decision_source = "manual_approve"
     state.reasoning = "Manually approved by AP team"
+
+    # if the vendor wasn't on the list, add them now — AP staff confirmed the relationship
+    if state.vendor_status in ("unknown", "possible_match") and state.vendor:
+        onboard_vendor(state.vendor)
+        # remove the vendor_not_onboarded flag if Grok had raised it, it's now resolved
+        state.flags = [f for f in state.flags if f.type != "vendor_not_onboarded"]
+
     payment.run(state)
     return state
 
@@ -138,6 +165,7 @@ def manual_reject(state: InvoiceState, reason: str) -> InvoiceState:
     if not reason or not reason.strip():
         raise ValueError("A reason is required when manually rejecting an invoice")
     state.decision = "rejected"
+    state.decision_source = "manual_reject"
     state.reasoning = f"Manually rejected by AP team: {reason.strip()}"
     payment.run(state)
     return state

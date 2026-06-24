@@ -40,8 +40,8 @@ Checks the extracted data against SQLite. Runs these checks in order:
 3. **Vendor check** - three outcomes:
    - Exact match (case-insensitive) -> approved, continue
    - Known bad actor (in table, approved = 0) -> halt immediately, auto-reject
-   - No exact match but similarity >= 90% -> flag as possible match, halt for human review. Surfaces the close match so a reviewer can confirm rather than the system assuming. Catches typos and formatting differences without auto-approving a spoofed vendor.
-   - No match, no close match -> unknown vendor, halt for human review
+   - No exact match but similarity >= 90% -> flag as possible match, continue to approval. Surfaces the close match so the approval agent can check vendor history before deciding. Catches typos and formatting differences without auto-approving a spoofed vendor.
+   - No match, no close match -> unknown vendor flag, continue to approval. Grok can use its vendor history and profile tools to gather context before deciding.
 
    Case-insensitive matching handles the common case ("widgets inc" vs "Widgets Inc."). Fuzzy matching handles formatting differences ("Widgets Incorporated" vs "Widgets Inc.") but is capped at a high threshold to avoid false positives. A bad actor named "Widgets lnc" (letter substitution) should not auto-match.
 4. **Item existence** - does each item exist in the catalog? "Not in catalog" and "not available for ordering" are different failure modes and should produce different messages.
@@ -54,9 +54,9 @@ No LLM in validation. Every check is deterministic: it either matches the DB or 
 
 Three paths:
 
-- Already halted from validation (bad actor, unknown vendor, foreign currency) -> set decision based on halt reason, don't call Grok
+- Already halted from validation (bad actor, foreign currency, unrecoverable errors) -> set decision based on halt reason, don't call Grok
 - Hard fraud flags (bad_actor, negative_quantity, negative_total) -> auto-reject immediately, no Grok call needed
-- Everything else -> Grok reasons through it with a self-critique loop
+- Everything else, including unknown vendors and possible vendor matches -> Grok reasons through it with a self-critique loop. Unknown vendors aren't auto-rejected or auto-escalated — the approval agent can check vendor history and profile before deciding, which is the right place to make that call.
 
 The approval agent runs a tool-calling loop before making a decision. Grok receives three tools and decides which to call based on what it sees:
 
@@ -213,8 +213,8 @@ After each batch run, processed files move from data/invoices/ to data/processed
 - Same item multiple times on one invoice -> aggregate quantities before stock check
 - Negative quantity -> data integrity flag
 - Zero amount -> flagged as suspicious
-- Vendor not in whitelist, no close match -> unknown vendor flag
-- Vendor not in whitelist but high similarity match (>=90%) -> possible match flag, surfaces the candidate for human review
+- Vendor not in whitelist, no close match -> unknown vendor flag, approval agent reasons with vendor history tool
+- Vendor not in whitelist but high similarity match (>=90%) -> possible match flag, approval agent surfaces the candidate and decides
 - Vendor in whitelist, approved = 0 -> known bad actor, immediate halt
 - Price variance >15% -> price flag, passed to Grok in approval
 

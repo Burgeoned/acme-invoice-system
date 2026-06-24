@@ -57,10 +57,9 @@ Create a `.env` file in the project root:
 
 ```
 XAI_API_KEY=your_key_here
-MOCK_GROK=false
 ```
 
-Set `MOCK_GROK=true` to run without API calls — useful for testing and eval.
+Replace `your_key_here` with a real xAI API key and the system uses Grok automatically. Leave it as-is and it falls back to mock mode — so you can run everything without an API key for eval and testing.
 
 Initialize the database:
 

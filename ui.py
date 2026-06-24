@@ -7,7 +7,7 @@ import sys
 import streamlit as st
 import streamlit.components.v1 as components
 
-from main import run_single, run_batch, manual_approve, manual_reject
+from main import run_single, run_batch, manual_approve, manual_reject, onboard_vendor
 from state import InvoiceState
 
 st.set_page_config(
@@ -274,7 +274,59 @@ def show_invoice_fields(state: InvoiceState):
 
     if state.reasoning:
         st.markdown("**AI reasoning:**")
+        # surface if critique flipped the decision — meaningful signal for reviewers
+        if getattr(state, "critique_changed", False) and getattr(state, "initial_decision", None):
+            st.caption(f"⚠️ AI initially decided **{state.initial_decision}** — self-critique revised to **{state.decision}**")
         st.info(state.reasoning)
+
+    # decision source label
+    source = getattr(state, "decision_source", None)
+    source_labels = {
+        "auto_grok": "Decided by AI",
+        "auto_reject": "Auto-rejected (rule-based)",
+        "manual_approve": "Approved by AP team",
+        "manual_reject": "Rejected by AP team",
+        "system_error": "System error — review logs",
+    }
+    if source and source in source_labels:
+        st.caption(f"Decision source: {source_labels[source]}")
+
+    # tool call chain — what did Grok actually look up?
+    tool_findings = getattr(state, "tool_findings", None)
+    if tool_findings:
+        with st.expander(f"What the AI looked up ({len(tool_findings)} tool call{'s' if len(tool_findings) != 1 else ''})"):
+            for finding in tool_findings:
+                tool_name = finding.get("tool", "unknown")
+                args = finding.get("args", {})
+                result = finding.get("result", {})
+                arg_str = ", ".join(f"{k}={v!r}" for k, v in args.items())
+                if isinstance(result, dict):
+                    result_lines = [f"  {k}: {v}" for k, v in result.items() if k not in ("vendor",)]
+                    result_str = "\n".join(result_lines)
+                else:
+                    result_str = str(result)
+                st.markdown(f"**`{tool_name}({arg_str})`**")
+                st.code(result_str, language=None)
+
+    # vendor onboarding prompt when Grok approved an unknown vendor
+    if (
+        state.decision == "approved"
+        and getattr(state, "vendor_status", None) in ("unknown", "possible_match")
+        and state.vendor
+        and state.has_flag("vendor_not_onboarded")
+    ):
+        st.warning(
+            f"**{state.vendor}** is not on the approved vendor list but was approved by the AI. "
+            "Confirm the vendor relationship and add them to the list if correct."
+        )
+        if st.button(f"Add '{state.vendor}' to approved vendors", key=f"onboard_{state.invoice_number}"):
+            try:
+                onboard_vendor(state.vendor)
+                state.flags = [f for f in state.flags if f.type != "vendor_not_onboarded"]
+                st.success(f"'{state.vendor}' added to approved vendor list.")
+                st.rerun()
+            except Exception as e:
+                st.error(f"Could not add vendor: {e}")
 
     if state.payment_result:
         pr = state.payment_result

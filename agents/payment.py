@@ -26,19 +26,28 @@ def mock_payment(vendor: str, amount: float) -> dict:
     }
 
 
+def _ensure_vendor_name_column(conn):
+    """Add vendor_name column if it doesn't exist (migrates DBs created before this column was added)."""
+    try:
+        conn.execute("ALTER TABLE processed_invoices ADD COLUMN vendor_name TEXT")
+        conn.commit()
+    except sqlite3.OperationalError:
+        pass  # column already exists
+
+
 def record_processed(state: InvoiceState):
     if not state.invoice_number:
         return
     conn = None
     try:
         conn = sqlite3.connect(DB_PATH)
+        _ensure_vendor_name_column(conn)
         conn.execute(
-            "INSERT OR IGNORE INTO processed_invoices (invoice_number, file_path, decision, processed_at) VALUES (?, ?, ?, ?)",
-            (state.invoice_number, state.file_path, state.decision, datetime.utcnow().isoformat())
+            "INSERT OR IGNORE INTO processed_invoices (invoice_number, file_path, vendor_name, decision, processed_at) VALUES (?, ?, ?, ?, ?)",
+            (state.invoice_number, state.file_path, state.vendor, state.decision, datetime.utcnow().isoformat())
         )
         conn.commit()
     except sqlite3.Error as e:
-        # dont crash the pipeline if we cant record it, just log it
         state.add_error(f"Could not record invoice in processed_invoices: {e}")
     finally:
         if conn:

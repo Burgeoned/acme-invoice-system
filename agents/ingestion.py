@@ -12,13 +12,18 @@ from agents.mock_responses import MOCK_INGESTION
 
 load_dotenv()
 
-MOCK_GROK = os.getenv("MOCK_GROK", "false").lower() == "true"
+_api_key = os.getenv("XAI_API_KEY", "")
+_mock_setting = os.getenv("MOCK_GROK", "auto")
+MOCK_GROK = (
+    _mock_setting == "true"
+    or (_mock_setting != "false" and (_api_key in ("", "your_key_here")))
+)
 
-# ssl verification fails on this machine due to corporate cert issues, disable for local dev
+_ssl_verify = os.getenv("SSL_VERIFY", "true").lower() != "false"
 client = OpenAI(
-    api_key=os.getenv("XAI_API_KEY"),
+    api_key=_api_key,
     base_url="https://api.x.ai/v1",
-    http_client=httpx.Client(verify=False),
+    http_client=httpx.Client(verify=_ssl_verify),
 )
 
 EXTRACTION_PROMPT = """

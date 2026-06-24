@@ -43,6 +43,7 @@ def setup():
             CREATE TABLE processed_invoices (
                 invoice_number TEXT NOT NULL,
                 file_path      TEXT NOT NULL,
+                vendor_name    TEXT,
                 decision       TEXT,
                 processed_at   TEXT NOT NULL,
                 PRIMARY KEY (invoice_number, file_path)

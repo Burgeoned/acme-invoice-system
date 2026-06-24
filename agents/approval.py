@@ -17,15 +17,21 @@ except ImportError:
 
 load_dotenv()
 
-MOCK_GROK = os.getenv("MOCK_GROK", "false").lower() == "true"
+_api_key = os.getenv("XAI_API_KEY", "")
+_mock_setting = os.getenv("MOCK_GROK", "auto")
+MOCK_GROK = (
+    _mock_setting == "true"
+    or (_mock_setting != "false" and (_api_key in ("", "your_key_here")))
+)
+
 HIGH_VALUE_THRESHOLD = 10000
 DB_PATH = "inventory.db"
 
-# ssl verification disabled for local dev
+_ssl_verify = os.getenv("SSL_VERIFY", "true").lower() != "false"
 client = OpenAI(
-    api_key=os.getenv("XAI_API_KEY"),
+    api_key=_api_key,
     base_url="https://api.x.ai/v1",
-    http_client=httpx.Client(verify=False),
+    http_client=httpx.Client(verify=_ssl_verify),
 )
 
 # tools grok can call during approval, each one hits our local db
@@ -167,40 +173,64 @@ def execute_tool(name: str, args: dict) -> str:
 
 
 def _lookup_vendor_history(vendor_name: str) -> str:
-    # processed_invoices stores invoice_number and file_path but not vendor name
-    # we check the vendors whitelist table for approval status and return that context
-    # for actual spend history grok would need a vendor_name column added to processed_invoices in a future schema
     conn = None
     try:
         conn = sqlite3.connect(DB_PATH)
 
-        # check if this vendor is on the approved list and what their status is
+        # check whitelist status
         vendor_row = conn.execute(
             "SELECT approved FROM vendors WHERE LOWER(name) = LOWER(?)",
             (vendor_name,)
         ).fetchone()
 
-        # count how many invoices we have processed total for context
-        total_processed = conn.execute("SELECT COUNT(*) FROM processed_invoices").fetchone()[0]
+        # per-vendor invoice history — gracefully handle old DBs without vendor_name column
+        try:
+            rows = conn.execute(
+                "SELECT decision FROM processed_invoices WHERE LOWER(vendor_name) = LOWER(?)",
+                (vendor_name,)
+            ).fetchall()
+            decisions = [r[0] for r in rows if r[0]]
+        except sqlite3.OperationalError:
+            decisions = []
 
-        conn.close()
+        approved_count = sum(1 for d in decisions if d == "approved")
+        rejected_count = sum(1 for d in decisions if d == "rejected")
+        total_count = len(decisions)
 
-        if vendor_row is None:
-            return json.dumps({
-                "vendor": vendor_name,
-                "on_approved_list": False,
-                "status": "not found in vendor whitelist",
-                "total_invoices_in_system": total_processed,
-                "note": "Vendor has no prior approval record. Treat as first-time vendor.",
-            })
+        on_approved_list = vendor_row is not None and bool(vendor_row[0])
 
-        approved = bool(vendor_row[0])
-        return json.dumps({
+        # derive trust tier so the approval agent can apply tiered thresholds
+        if total_count == 0 and not on_approved_list:
+            tier = "first_time"
+            tier_note = "Not on the approved vendor list and no prior invoice history. Treat as higher risk — human review above $5,000."
+        elif total_count == 0 and on_approved_list:
+            tier = "approved_no_history"
+            tier_note = "On the approved vendor list but no prior invoices in this system yet. Standard $10K threshold applies."
+        elif approved_count >= 5 and rejected_count == 0:
+            tier = "trusted"
+            tier_note = f"{approved_count} approved invoices, no rejections. Elevated threshold applies — can approve up to $25K if items and pricing are clean."
+        elif rejected_count > 0:
+            tier = "has_rejections"
+            tier_note = f"{approved_count} approved, {rejected_count} rejected. Standard $10K threshold applies regardless of history length."
+        else:
+            tier = "establishing"
+            tier_note = f"{approved_count} approved invoice(s) so far. Standard $10K threshold applies."
+
+        result = {
             "vendor": vendor_name,
-            "on_approved_list": approved,
-            "status": "approved supplier" if approved else "blocked, known bad actor",
-            "total_invoices_in_system": total_processed,
-        })
+            "on_approved_list": vendor_row is not None and bool(vendor_row[0]),
+            "status": (
+                "approved supplier" if vendor_row and vendor_row[0]
+                else "blocked, known bad actor" if vendor_row
+                else "not on approved list"
+            ),
+            "prior_invoices": total_count,
+            "approved_count": approved_count,
+            "rejected_count": rejected_count,
+            "trust_tier": tier,
+            "tier_note": tier_note,
+        }
+        return json.dumps(result)
     except Exception as e:
         return json.dumps({"error": str(e)})
     finally:
@@ -272,7 +302,6 @@ Payment terms: {state.payment_terms or "not specified"}
         {"role": "user", "content": user_message},
     ]
 
-    tool_findings = []
     escalation_reason = None
 
     # simple cases skip tool loop entirely, complex ones get up to 3 rounds
@@ -289,6 +318,7 @@ Payment terms: {state.payment_terms or "not specified"}
         except Exception as e:
             state.add_error(f"Grok approval call failed on round {round_num + 1}: {e}")
             state.decision = "rejected"
+            state.decision_source = "system_error"
             state.reasoning = "Defaulting to rejected due to Grok failure during approval"
             return
 
@@ -306,6 +336,7 @@ Payment terms: {state.payment_terms or "not specified"}
             except json.JSONDecodeError as e:
                 state.add_error(f"Grok returned invalid JSON after tool loop: {e}")
                 state.decision = "human_review"
+                state.decision_source = "system_error"
                 state.reasoning = "Could not parse Grok response, routing to human review"
                 return
             break
@@ -323,7 +354,11 @@ Payment terms: {state.payment_terms or "not specified"}
                 args = {}
 
             result = execute_tool(tool_call.function.name, args)
-            tool_findings.append(f"{tool_call.function.name}({args}): {result}")
+            try:
+                parsed_result = json.loads(result)
+            except Exception:
+                parsed_result = result
+            state.tool_findings.append({"tool": tool_call.function.name, "args": args, "result": parsed_result})
 
             if tool_call.function.name == "flag_for_escalation":
                 try:
@@ -340,14 +375,21 @@ Payment terms: {state.payment_terms or "not specified"}
         # hit the tool round limit without a final answer
         state.add_error(f"Grok tool loop exceeded {MAX_TOOL_ROUNDS} rounds without a decision")
         state.decision = "human_review"
+        state.decision_source = "system_error"
         state.reasoning = "Approval agent did not reach a decision within the allowed tool rounds"
         return
 
     # if grok explicitly escalated, use that reason and short-circuit critique
     if escalation_reason:
         state.decision = "human_review"
+        state.decision_source = "auto_grok"
         state.reasoning = f"Escalated by approval agent: {escalation_reason}"
         return
+
+    tool_findings_text = (
+        "\n".join(f"{f['tool']}({f['args']}): {json.dumps(f['result'])}" for f in state.tool_findings)
+        if state.tool_findings else "none"
+    )
 
     # self-critique pass on whatever grok decided
     critique_prompt = CRITIQUE_PROMPT.format(
@@ -357,8 +399,10 @@ Payment terms: {state.payment_terms or "not specified"}
         total_amount=state.total_amount or 0,
         flags=format_flags(state),
         high_value=high_value,
-        tool_findings="\n".join(tool_findings) if tool_findings else "none",
+        tool_findings=tool_findings_text,
     )
+
+    state.initial_decision = first.get("decision")
 
     try:
         critique_response = client.chat.completions.create(
@@ -382,8 +426,18 @@ Payment terms: {state.payment_terms or "not specified"}
         state.add_error(f"Grok returned unexpected decision value '{decision}', defaulting to human_review")
         decision = "human_review"
 
+    state.critique_changed = (decision != state.initial_decision)
     state.decision = decision
+    state.decision_source = "auto_grok"
     state.reasoning = final.get("reasoning", "No reasoning provided")
+
+    # grok approved an unknown/possible-match vendor — flag for human onboarding review
+    if decision == "approved" and state.vendor_status in ("unknown", "possible_match"):
+        state.add_flag(
+            "vendor_not_onboarded",
+            f"Vendor '{state.vendor}' was approved but is not on the approved vendor list. "
+            "AP team should verify and add them to the vendor whitelist."
+        )
 
 
 def get_mock_decision(state: InvoiceState) -> dict:
@@ -418,17 +472,20 @@ def run(state: InvoiceState):
     if state.halted:
         if state.vendor_status == "bad_actor":
             state.decision = "rejected"
+            state.decision_source = "auto_reject"
             state.reasoning = state.halt_reason
         elif state.errors and not state.vendor_status:
             state.decision = "error"
+            state.decision_source = "system_error"
             state.reasoning = state.halt_reason
         elif state.has_flag("duplicate_invoice") and _original_was_approved(state):
-            # newer version already approved in this batch, silently reject the old one
             state.decision = "rejected"
+            state.decision_source = "auto_reject"
             state.reasoning = "Superseded by a newer version of this invoice that was already approved."
         else:
-            # unknown vendor, possible match, foreign currency all need human eyes
+            # foreign currency, duplicate invoice without prior approval
             state.decision = "human_review"
+            state.decision_source = "auto_grok"
             state.reasoning = state.halt_reason
         return
 
@@ -438,6 +495,7 @@ def run(state: InvoiceState):
     hard_flags = flag_types & HARD_REJECT_FLAGS
     if hard_flags:
         state.decision = "rejected"
+        state.decision_source = "auto_reject"
         state.reasoning = f"Auto-rejected due to: {', '.join(hard_flags)}"
         state.mark_stage_complete("approval")
         return
