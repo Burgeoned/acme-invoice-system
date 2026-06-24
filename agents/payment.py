@@ -1,5 +1,6 @@
 import json
 import os
+import random
 import sqlite3
 import time
 import uuid
@@ -10,13 +11,22 @@ from state import InvoiceState
 DB_PATH = "inventory.db"
 
 MAX_RETRIES = 3
-RETRY_DELAY = 2  # seconds between attempts
+RETRY_DELAY = 2  # seconds between attempts, would use exponential backoff with a real API
 
 LOGS_DIR = "logs"
 
+# set PAYMENT_FAIL_RATE=0.3 in .env to simulate 30% payment failures for testing
+PAYMENT_FAIL_RATE = float(os.getenv("PAYMENT_FAIL_RATE", "0"))
+
+
+class PaymentError(Exception):
+    pass
+
 
 def mock_payment(vendor: str, amount: float) -> dict:
-    # simulates a payment API call, always succeeds
+    if PAYMENT_FAIL_RATE > 0 and random.random() < PAYMENT_FAIL_RATE:
+        raise PaymentError(f"Payment gateway timeout (simulated {PAYMENT_FAIL_RATE:.0%} failure rate)")
+
     return {
         "transaction_id": str(uuid.uuid4()),
         "vendor": vendor,
@@ -71,7 +81,7 @@ def run(state: InvoiceState):
         return
 
     if state.decision != "approved":
-        # rejected or human_review, log and record so cross-session duplicate detection catches it
+        # rejected or human_review — log and record so cross-session duplicate detection catches it
         state.payment_status = "skipped"
         write_audit_log(state)
         record_processed(state)
@@ -94,17 +104,23 @@ def run(state: InvoiceState):
             )
             state.payment_result = result
             state.payment_status = "paid"
+            state.payment_attempts = attempt
             last_error = None
             break
-        except Exception as e:
+        except PaymentError as e:
             last_error = e
             state.add_error(f"Payment attempt {attempt} failed: {e}")
             if attempt < MAX_RETRIES:
                 time.sleep(RETRY_DELAY)
 
     if last_error is not None:
+        # record in processed_invoices even on failure — this is what prevents a re-run
+        # from trying to pay the same invoice again. the AP team will see payment_failed
+        # in the audit log and can investigate before anyone manually retries.
         state.payment_status = "failed"
+        state.decision = "payment_failed"
         write_audit_log(state)
+        record_processed(state)
         return
 
     state.mark_stage_complete("payment")

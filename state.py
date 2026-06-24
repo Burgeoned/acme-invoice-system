@@ -52,6 +52,7 @@ class InvoiceState:
     # payment fills these in
     payment_status: Optional[str] = None
     payment_result: Optional[dict] = None
+    payment_attempts: int = 0
 
     # pipeline control
     stage: str = "ingestion"
@@ -122,6 +123,7 @@ class InvoiceState:
             "critique_changed": self.critique_changed,
             "payment_status": self.payment_status,
             "payment_result": self.payment_result,
+            "payment_attempts": self.payment_attempts,
             "stage": self.stage,
             "halted": self.halted,
             "halt_reason": self.halt_reason,

@@ -328,9 +328,18 @@ def show_invoice_fields(state: InvoiceState):
             else:
                 st.error(f"Could not add '{state.vendor}' — they may already be in the vendor list or flagged as a blocked vendor. Check with your administrator.")
 
-    if state.payment_result:
+    if state.payment_status == "failed":
+        attempts = getattr(state, "payment_attempts", 0) or 3
+        st.error(
+            f"Payment failed after {attempts} attempt{'s' if attempts != 1 else ''}. "
+            "This invoice is recorded as payment_failed — do not resubmit manually without checking with finance first. "
+            "Contact your payment processor to confirm no charge went through before retrying."
+        )
+    elif state.payment_result:
         pr = state.payment_result
-        st.success(f"Payment confirmed. Transaction {pr['transaction_id']} · ${pr['amount']:,.2f} to {pr['vendor']} at {pr['timestamp']}")
+        attempts = getattr(state, "payment_attempts", 1)
+        attempt_note = f" (succeeded on attempt {attempts})" if attempts > 1 else ""
+        st.success(f"Payment confirmed{attempt_note}. Transaction {pr['transaction_id']} · ${pr['amount']:,.2f} to {pr['vendor']} at {pr['timestamp']}")
 
     if state.errors:
         for e in state.errors:

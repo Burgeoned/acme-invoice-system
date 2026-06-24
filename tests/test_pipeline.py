@@ -11,6 +11,7 @@ Run with: pytest tests/
 import os
 import sqlite3
 import tempfile
+from datetime import datetime, timezone
 import pytest
 
 from state import InvoiceState, LineItem, Flag
@@ -333,3 +334,129 @@ class TestBatchSort:
         files.sort(key=lambda f: (-os.path.getmtime(f), os.path.basename(f)))
         # invoice_a.txt < invoice_b.txt alphabetically, so it comes first
         assert os.path.basename(files[0]) == "invoice_a.txt"
+
+
+# ---------------------------------------------------------------------------
+# Payment — failure handling and duplicate prevention
+# ---------------------------------------------------------------------------
+
+class TestPaymentFailures:
+    def test_mock_payment_succeeds_by_default(self):
+        from agents.payment import mock_payment
+        result = mock_payment("Widgets Inc.", 1000.0)
+        assert result["status"] == "success"
+        assert result["transaction_id"]
+        assert result["amount"] == 1000.0
+
+    def test_mock_payment_fails_at_rate_1(self, monkeypatch):
+        monkeypatch.setattr("agents.payment.PAYMENT_FAIL_RATE", 1.0)
+        from agents.payment import mock_payment, PaymentError
+        with pytest.raises(PaymentError):
+            mock_payment("Widgets Inc.", 1000.0)
+
+    def test_failed_payment_records_in_db(self, db_path, monkeypatch):
+        """A failed payment must be recorded so a re-run doesn't try to pay again."""
+        monkeypatch.setattr("agents.payment.PAYMENT_FAIL_RATE", 1.0)
+        monkeypatch.setattr("agents.payment.RETRY_DELAY", 0)  # skip sleep in tests
+        monkeypatch.setattr("agents.payment.DB_PATH", db_path)
+
+        from agents import payment
+        state = make_state(vendor="Widgets Inc.", items=[("WidgetA", 1, 250)], total=250)
+        state.decision = "approved"
+        state.decision_source = "auto_grok"
+        state.vendor_status = "approved"
+
+        payment.run(state)
+
+        assert state.payment_status == "failed"
+        assert state.decision == "payment_failed"
+
+        # verify it was recorded in the DB so duplicate check will catch it
+        conn = sqlite3.connect(db_path)
+        row = conn.execute(
+            "SELECT decision FROM processed_invoices WHERE invoice_number = ?",
+            (state.invoice_number,)
+        ).fetchone()
+        conn.close()
+        assert row is not None, "Failed payment must be recorded in processed_invoices"
+        assert row[0] == "payment_failed"
+
+    def test_successful_payment_recorded_once(self, db_path, monkeypatch):
+        """Successful payment should be in DB exactly once — no double recording."""
+        monkeypatch.setattr("agents.payment.PAYMENT_FAIL_RATE", 0.0)
+        monkeypatch.setattr("agents.payment.DB_PATH", db_path)
+
+        from agents import payment
+        state = make_state(vendor="Widgets Inc.", items=[("WidgetA", 1, 250)], total=250)
+        state.decision = "approved"
+        state.vendor_status = "approved"
+
+        payment.run(state)
+
+        assert state.payment_status == "paid"
+
+        conn = sqlite3.connect(db_path)
+        count = conn.execute(
+            "SELECT COUNT(*) FROM processed_invoices WHERE invoice_number = ?",
+            (state.invoice_number,)
+        ).fetchone()[0]
+        conn.close()
+        assert count == 1, "Invoice should be recorded exactly once"
+
+    def test_retry_succeeds_on_second_attempt(self, db_path, monkeypatch):
+        """Simulate a transient failure — succeeds on attempt 2."""
+        call_count = {"n": 0}
+
+        def flaky_payment(vendor, amount):
+            call_count["n"] += 1
+            if call_count["n"] == 1:
+                from agents.payment import PaymentError
+                raise PaymentError("transient timeout")
+            return {
+                "transaction_id": "txn-retry-test",
+                "vendor": vendor,
+                "amount": amount,
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "status": "success",
+            }
+
+        monkeypatch.setattr("agents.payment.mock_payment", flaky_payment)
+        monkeypatch.setattr("agents.payment.RETRY_DELAY", 0)
+        monkeypatch.setattr("agents.payment.DB_PATH", db_path)
+
+        from agents import payment
+        state = make_state(vendor="Widgets Inc.", items=[("WidgetA", 1, 250)], total=250)
+        state.decision = "approved"
+        state.vendor_status = "approved"
+
+        payment.run(state)
+
+        assert state.payment_status == "paid"
+        assert state.payment_attempts == 2
+        assert call_count["n"] == 2  # tried twice, no more
+
+    def test_non_approved_invoice_is_not_paid(self, db_path, monkeypatch):
+        monkeypatch.setattr("agents.payment.DB_PATH", db_path)
+        from agents import payment
+        state = make_state(vendor="Widgets Inc.", items=[("WidgetA", 1, 250)], total=250)
+        state.decision = "rejected"
+        state.vendor_status = "approved"
+
+        payment.run(state)
+
+        assert state.payment_status == "skipped"
+        assert state.payment_result is None
+
+    def test_halted_approved_invoice_is_blocked(self, db_path, monkeypatch):
+        """If an invoice is somehow halted but approved, payment must be blocked."""
+        monkeypatch.setattr("agents.payment.DB_PATH", db_path)
+        from agents import payment
+        state = make_state(vendor="Widgets Inc.", items=[("WidgetA", 1, 250)], total=250)
+        state.decision = "approved"
+        state.halted = True
+        state.halt_reason = "foreign currency"
+
+        payment.run(state)
+
+        assert state.payment_status == "blocked"
+        assert state.payment_result is None
