@@ -157,6 +157,8 @@ Approved supplier whitelist. Anything not in this table gets flagged.
 
 This is an addition beyond the minimum schema. Item-level checks catch bad quantities and unknown SKUs, but won't catch a spoofed vendor. The vendors table adds a second signal that the baseline schema misses.
 
+All three tables use text primary keys (name, item) rather than integer surrogate keys. In production you'd use integer PKs with UNIQUE constraints on the name columns so a rename doesn't cascade. Here the names don't change, query volume is trivial, and every lookup is by name anyway, so the text PK is fine for the prototype.
+
 Two distinct states: a vendor not in this table is unknown (never seen before, flag for review). A vendor in this table with approved = 0 is a known bad actor (explicit rejection). Fraudster LLC is seeded as approved = 0. NoProd Industries is not in the table. they're unknown, not confirmed bad.
 
 ---
