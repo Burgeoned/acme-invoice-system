@@ -1,5 +1,5 @@
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 
 
@@ -82,7 +82,7 @@ class InvoiceState:
         self.halt_reason = reason
 
     def mark_stage_complete(self, stage: str):
-        self.timestamps[stage] = datetime.utcnow().isoformat()
+        self.timestamps[stage] = datetime.now(timezone.utc).isoformat()
         stages = ["ingestion", "validation", "approval", "payment"]
         current = stages.index(stage)
         if current + 1 < len(stages):

@@ -89,7 +89,8 @@ def run_batch(archive: bool = True) -> list[InvoiceState]:
             discarded.extend(f for f in group if f != chosen)
 
     # newest first so revised invoices process before originals and win the duplicate check
-    files.sort(key=os.path.getmtime, reverse=True)
+    # filename is the tiebreaker so the order is deterministic when mtimes match
+    files.sort(key=lambda f: (-os.path.getmtime(f), os.path.basename(f)))
 
     if not files:
         print(f"No supported invoice files found in {INVOICE_DIR}")
@@ -127,20 +128,29 @@ def run_batch(archive: bool = True) -> list[InvoiceState]:
     return results
 
 
-def onboard_vendor(vendor_name: str):
-    """Add a vendor to the approved list after AP staff manually approves their invoice."""
+def onboard_vendor(vendor_name: str) -> bool:
+    """Add a vendor to the approved list. Returns True if added, False if already exists or blocked."""
     if not vendor_name:
-        return
+        return False
+    conn = None
     try:
         conn = sqlite3.connect(DB_PATH)
+        existing = conn.execute(
+            "SELECT approved FROM vendors WHERE LOWER(name) = LOWER(?)", (vendor_name,)
+        ).fetchone()
+        if existing is not None:
+            # already in the table — if blocked (approved=0), don't silently flip them
+            return False
         conn.execute(
-            "INSERT OR IGNORE INTO vendors (name, approved) VALUES (?, 1)",
-            (vendor_name,)
+            "INSERT INTO vendors (name, approved) VALUES (?, 1)", (vendor_name,)
         )
         conn.commit()
-        conn.close()
+        return True
     except sqlite3.Error:
-        pass  # don't crash the approval flow if DB write fails
+        return False
+    finally:
+        if conn:
+            conn.close()
 
 
 def manual_approve(state: InvoiceState) -> InvoiceState:
@@ -153,9 +163,11 @@ def manual_approve(state: InvoiceState) -> InvoiceState:
 
     # if the vendor wasn't on the list, add them now — AP staff confirmed the relationship
     if state.vendor_status in ("unknown", "possible_match") and state.vendor:
-        onboard_vendor(state.vendor)
-        # remove the vendor_not_onboarded flag if Grok had raised it, it's now resolved
-        state.flags = [f for f in state.flags if f.type != "vendor_not_onboarded"]
+        added = onboard_vendor(state.vendor)
+        if added:
+            state.flags = [f for f in state.flags if f.type != "vendor_not_onboarded"]
+        # if onboard_vendor returned False the vendor was already in the DB (possibly blocked)
+        # leave the flag in place so the audit log captures that onboarding didn't happen
 
     payment.run(state)
     return state

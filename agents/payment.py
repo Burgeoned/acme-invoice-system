@@ -3,7 +3,7 @@ import os
 import sqlite3
 import time
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 
 from state import InvoiceState
 
@@ -21,18 +21,9 @@ def mock_payment(vendor: str, amount: float) -> dict:
         "transaction_id": str(uuid.uuid4()),
         "vendor": vendor,
         "amount": amount,
-        "timestamp": datetime.utcnow().isoformat(),
+        "timestamp": datetime.now(timezone.utc).isoformat(),
         "status": "success",
     }
-
-
-def _ensure_vendor_name_column(conn):
-    """Add vendor_name column if it doesn't exist (migrates DBs created before this column was added)."""
-    try:
-        conn.execute("ALTER TABLE processed_invoices ADD COLUMN vendor_name TEXT")
-        conn.commit()
-    except sqlite3.OperationalError:
-        pass  # column already exists
 
 
 def record_processed(state: InvoiceState):
@@ -41,10 +32,9 @@ def record_processed(state: InvoiceState):
     conn = None
     try:
         conn = sqlite3.connect(DB_PATH)
-        _ensure_vendor_name_column(conn)
         conn.execute(
             "INSERT OR IGNORE INTO processed_invoices (invoice_number, file_path, vendor_name, decision, processed_at) VALUES (?, ?, ?, ?, ?)",
-            (state.invoice_number, state.file_path, state.vendor, state.decision, datetime.utcnow().isoformat())
+            (state.invoice_number, state.file_path, state.vendor, state.decision, datetime.now(timezone.utc).isoformat())
         )
         conn.commit()
     except sqlite3.Error as e:
@@ -59,11 +49,16 @@ def write_audit_log(state: InvoiceState):
     invoice_id = state.invoice_number or os.path.basename(state.file_path)
     log_path = os.path.join(LOGS_DIR, f"{invoice_id}.json")
 
+    # if a log already exists for this invoice, append a timestamp so we don't
+    # overwrite it — each run of the pipeline produces an immutable record
+    if os.path.exists(log_path):
+        stamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+        log_path = os.path.join(LOGS_DIR, f"{invoice_id}_{stamp}.json")
+
     try:
         with open(log_path, "w") as f:
             json.dump(state.to_dict(), f, indent=2)
     except Exception as e:
-        # logging failure shouldnt crash the pipeline, just note it
         state.add_error(f"Could not write audit log: {e}")
 
 

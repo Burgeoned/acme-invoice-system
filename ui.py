@@ -320,13 +320,13 @@ def show_invoice_fields(state: InvoiceState):
             "Confirm the vendor relationship and add them to the list if correct."
         )
         if st.button(f"Add '{state.vendor}' to approved vendors", key=f"onboard_{state.invoice_number}"):
-            try:
-                onboard_vendor(state.vendor)
+            added = onboard_vendor(state.vendor)
+            if added:
                 state.flags = [f for f in state.flags if f.type != "vendor_not_onboarded"]
                 st.success(f"'{state.vendor}' added to approved vendor list.")
                 st.rerun()
-            except Exception as e:
-                st.error(f"Could not add vendor: {e}")
+            else:
+                st.error(f"Could not add '{state.vendor}' — they may already be in the vendor list or flagged as a blocked vendor. Check with your administrator.")
 
     if state.payment_result:
         pr = state.payment_result
@@ -412,9 +412,10 @@ def review_card(state: InvoiceState, idx: int):
                 st.rerun()
 
     with col_detail:
-        label = "Hide" if st.session_state.get(f"show_detail_{idx}") else "Details"
+        detail_key = f"show_detail_{state.invoice_number or idx}"
+        label = "Hide" if st.session_state.get(detail_key) else "Details"
         if st.button(label, key=f"detail_{idx}", use_container_width=True):
-            st.session_state[f"show_detail_{idx}"] = not st.session_state.get(f"show_detail_{idx}", False)
+            st.session_state[detail_key] = not st.session_state.get(detail_key, False)
             st.rerun()
 
     if st.session_state.get(f"rejecting_{idx}", False):
@@ -435,7 +436,7 @@ def review_card(state: InvoiceState, idx: int):
                 except ValueError as e:
                     st.error(str(e))
 
-    if st.session_state.get(f"show_detail_{idx}", False):
+    if st.session_state.get(f"show_detail_{state.invoice_number or idx}", False):
         st.markdown("---")
         show_full_detail(state)
         st.markdown("---")

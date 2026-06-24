@@ -103,11 +103,11 @@ python eval.py
 | Invoice | Format | Scenario | Expected |
 |---------|--------|----------|----------|
 | INV-1001 | TXT | Clean order, approved vendor | Approved |
-| INV-1002 | TXT | 20x GadgetX, exceeds authorized limit | Human review |
+| INV-1002 | TXT | 20x GadgetX, exceeds authorized limit | Rejected |
 | INV-1003 | TXT | Fraudster LLC, FakeItem, urgent wire transfer | Rejected |
 | INV-1004 | JSON | Clean order with tax | Approved |
 | INV-1004 revised | JSON | Same invoice number, updated amounts and items | Revised version wins, original superseded |
-| INV-1005 | JSON | $15K order, 8x GadgetX | Human review |
+| INV-1005 | JSON | $15K order, 8x GadgetX | Rejected |
 | INV-1006 | CSV | Single item, clean | Approved |
 | INV-1007 | CSV | $15K, 20x WidgetA | Human review |
 | INV-1008 | TXT | Unknown vendor, items not in catalog | Human review |

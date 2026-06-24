@@ -66,7 +66,7 @@ The approval agent runs a tool-calling loop before making a decision. Grok recei
 - get_item_price: queries the items table for the catalog price on a specific item, useful when a price_variance flag is present so Grok can see the actual delta rather than just knowing a flag exists
 - flag_for_escalation: lets Grok explicitly route to human review with a typed reason, rather than just returning "human_review" as a string
 
-Grok runs this loop up to 5 rounds, calling whatever tools it needs and receiving results back. Once it stops calling tools it returns its initial decision. A second Grok call then critiques that decision, the critique includes what tools were called and what they found. The model can change its decision if the critique reveals a problem.
+Grok runs this loop up to 3 rounds, calling whatever tools it needs and receiving results back. Once it stops calling tools it returns its initial decision. A second Grok call then critiques that decision, the critique includes what tools were called and what they found. The model can change its decision if the critique reveals a problem.
 
 Invoices over $10K are flagged as high value in the prompt. If the first Grok call fails, default to rejected. If only the critique fails, use the first decision. If Grok returns a decision value outside the allowed set, default to human_review and log it.
 
