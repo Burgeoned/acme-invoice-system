@@ -7,7 +7,7 @@ import sys
 import streamlit as st
 import streamlit.components.v1 as components
 
-from main import run_single, run_batch, manual_approve, manual_reject, onboard_vendor
+from main import run_single, run_batch, manual_approve, manual_reject, onboard_vendor, retry_payment
 from state import InvoiceState
 
 st.set_page_config(
@@ -58,17 +58,19 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 DECISION_COLORS = {
-    "approved":     "#22c55e",
-    "rejected":     "#ef4444",
-    "human_review": "#f59e0b",
-    "error":        "#8b5cf6",
+    "approved":       "#22c55e",
+    "rejected":       "#ef4444",
+    "human_review":   "#f59e0b",
+    "payment_failed": "#f97316",
+    "error":          "#8b5cf6",
 }
 
 DECISION_LABELS = {
-    "approved":     "Approved",
-    "rejected":     "Rejected",
-    "human_review": "Needs review",
-    "error":        "Error",
+    "approved":       "Approved",
+    "rejected":       "Rejected",
+    "human_review":   "Needs review",
+    "payment_failed": "Payment failed",
+    "error":          "Error",
 }
 
 FLAG_PLAIN_ENGLISH = {
@@ -588,7 +590,47 @@ with tab_batch:
     if st.session_state.get("results"):
         results = st.session_state.results
         human_review = [s for s in results if s.decision == "human_review"]
-        handled = [s for s in results if s.decision in ("approved", "rejected", "error")]
+        payment_failed = [s for s in results if s.payment_status == "failed"]
+        handled = [s for s in results if s.decision in ("approved", "rejected", "error") and s.payment_status != "failed"]
+
+        if payment_failed:
+            st.markdown(f"### Payment Failed ({len(payment_failed)})")
+            st.warning(
+                "These invoices were approved but payment could not be processed after 3 attempts. "
+                "**Before retrying, confirm with your payment processor that no charge went through.** "
+                "Once confirmed, use the Retry Payment button below."
+            )
+            for idx, state in enumerate(payment_failed):
+                with st.container():
+                    col_info, col_action = st.columns([3, 1])
+                    with col_info:
+                        st.markdown(f"**{state.vendor or 'Unknown vendor'}** · {state.invoice_number or 'no number'} · ${state.total_amount:,.2f}" if state.total_amount else f"**{state.vendor or 'Unknown vendor'}** · {state.invoice_number or 'no number'}")
+                        if state.errors:
+                            st.caption(state.errors[-1])
+                    with col_action:
+                        retry_key = f"retry_confirm_{state.invoice_number}_{idx}"
+                        if not st.session_state.get(retry_key):
+                            if st.button("Retry Payment", key=f"retry_{idx}", use_container_width=True):
+                                st.session_state[retry_key] = True
+                                st.rerun()
+                        else:
+                            st.error("Confirm no charge went through, then click Confirm Retry.")
+                            if st.button("Confirm Retry", key=f"retry_confirm_btn_{idx}", use_container_width=True, type="primary"):
+                                with st.spinner("Retrying payment..."):
+                                    retry_payment(state)
+                                for i, s in enumerate(st.session_state.results):
+                                    if s.file_path == state.file_path:
+                                        st.session_state.results[i] = state
+                                        break
+                                st.session_state.pop(retry_key, None)
+                                st.rerun()
+                    detail_key = f"show_detail_pf_{state.invoice_number or idx}"
+                    if st.button("Details" if not st.session_state.get(detail_key) else "Hide", key=f"pf_detail_{idx}"):
+                        st.session_state[detail_key] = not st.session_state.get(detail_key, False)
+                        st.rerun()
+                    if st.session_state.get(detail_key):
+                        show_full_detail(state)
+                st.markdown("---")
 
         if human_review:
             st.markdown(f"### Needs Your Attention ({len(human_review)})")

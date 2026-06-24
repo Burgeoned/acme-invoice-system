@@ -447,6 +447,42 @@ class TestPaymentFailures:
         assert state.payment_status == "skipped"
         assert state.payment_result is None
 
+    def test_retry_payment_clears_failed_record_and_retries(self, db_path, monkeypatch):
+        """After 3 failures, AP retries — the payment_failed record is cleared
+        before retrying so duplicate detection doesn't block the retry."""
+        monkeypatch.setattr("agents.payment.PAYMENT_FAIL_RATE", 0.0)
+        monkeypatch.setattr("agents.payment.DB_PATH", db_path)
+        monkeypatch.setattr("main.DB_PATH", db_path)
+
+        # seed a payment_failed record as if a prior run failed
+        conn = sqlite3.connect(db_path)
+        conn.execute(
+            "INSERT INTO processed_invoices (invoice_number, file_path, vendor_name, decision, processed_at) VALUES (?,?,?,?,?)",
+            ("INV-TEST", "test/invoice.txt", "Widgets Inc.", "payment_failed", datetime.now(timezone.utc).isoformat())
+        )
+        conn.commit()
+        conn.close()
+
+        from main import retry_payment
+        state = make_state(vendor="Widgets Inc.", items=[("WidgetA", 1, 250)], total=250)
+        state.decision = "payment_failed"
+        state.payment_status = "failed"
+        state.vendor_status = "approved"
+
+        retry_payment(state)
+
+        assert state.payment_status == "paid"
+        assert state.decision == "approved"
+
+        conn = sqlite3.connect(db_path)
+        row = conn.execute(
+            "SELECT decision FROM processed_invoices WHERE invoice_number = ?",
+            ("INV-TEST",)
+        ).fetchone()
+        conn.close()
+        assert row is not None
+        assert row[0] == "approved"
+
     def test_halted_approved_invoice_is_blocked(self, db_path, monkeypatch):
         """If an invoice is somehow halted but approved, payment must be blocked."""
         monkeypatch.setattr("agents.payment.DB_PATH", db_path)

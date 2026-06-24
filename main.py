@@ -173,6 +173,36 @@ def manual_approve(state: InvoiceState) -> InvoiceState:
     return state
 
 
+def retry_payment(state: InvoiceState) -> InvoiceState:
+    """Retry payment on an invoice that previously failed. Skips re-validation and re-approval
+    since the original decision stands — this is purely a payment retry."""
+    state.decision = "approved"
+    state.decision_source = "manual_approve"
+    state.payment_status = None
+    state.payment_result = None
+    state.payment_attempts = 0
+    state.halted = False
+    state.reasoning = (state.reasoning or "") + " Payment retried by AP team after initial failure."
+
+    # update the DB record so it no longer blocks future duplicate detection as payment_failed
+    conn = None
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        conn.execute(
+            "DELETE FROM processed_invoices WHERE invoice_number = ? AND file_path = ?",
+            (state.invoice_number, state.file_path)
+        )
+        conn.commit()
+    except sqlite3.Error:
+        pass
+    finally:
+        if conn:
+            conn.close()
+
+    payment.run(state)
+    return state
+
+
 def manual_reject(state: InvoiceState, reason: str) -> InvoiceState:
     if not reason or not reason.strip():
         raise ValueError("A reason is required when manually rejecting an invoice")
