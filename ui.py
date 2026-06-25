@@ -290,25 +290,24 @@ def show_invoice_fields(state: InvoiceState):
             else:
                 st.warning(plain)
 
+    # decision source — human decisions shown prominently
+    source = getattr(state, "decision_source", None)
+    if source == "manual_approve":
+        st.success("**Manually approved by AP team**")
+    elif source == "manual_reject":
+        st.warning("**Manually rejected by AP team**")
+    elif source == "system_error":
+        st.error("System error — review logs")
+    elif source == "payment_failed":
+        st.error("Payment failed — see logs")
+    elif source:
+        st.caption(f"Decision source: {'Decided by AI' if source == 'auto_grok' else 'Auto-rejected (rule-based)'}")
+
     if state.reasoning:
         st.markdown("**AI reasoning:**")
-        # surface if critique flipped the decision — meaningful signal for reviewers
         if getattr(state, "critique_changed", False) and getattr(state, "initial_decision", None):
             st.caption(f"⚠️ AI initially decided **{state.initial_decision}** — self-critique revised to **{state.decision}**")
-        # escape $ so Streamlit doesn't treat them as LaTeX math delimiters
         st.info(state.reasoning.replace("$", "\\$"))
-
-    # decision source label
-    source = getattr(state, "decision_source", None)
-    source_labels = {
-        "auto_grok": "Decided by AI",
-        "auto_reject": "Auto-rejected (rule-based)",
-        "manual_approve": "Approved by AP team",
-        "manual_reject": "Rejected by AP team",
-        "system_error": "System error — review logs",
-    }
-    if source and source in source_labels:
-        st.caption(f"Decision source: {source_labels[source]}")
 
     # tool call chain — what did Grok actually look up?
     tool_findings = getattr(state, "tool_findings", None)
@@ -496,7 +495,11 @@ def show_handled_row(state: InvoiceState, row_idx: int, all_handled: list = None
     with col2:
         st.markdown(f"<span style='line-height:2.2'>{amount}</span>", unsafe_allow_html=True)
     with col3:
-        st.markdown(f"<span style='line-height:2.5'>{badge(state.decision)}</span>", unsafe_allow_html=True)
+        source = getattr(state, "decision_source", None)
+        human_tag = ""
+        if source in ("manual_approve", "manual_reject"):
+            human_tag = " <span style='background:#1d4ed8;color:#fff;font-size:0.65rem;padding:1px 5px;border-radius:3px;vertical-align:middle'>AP</span>"
+        st.markdown(f"<span style='line-height:2.5'>{badge(state.decision)}{human_tag}</span>", unsafe_allow_html=True)
     with col4:
         if can_override:
             overriding = st.session_state.get(f"overriding_{row_idx}", False)
