@@ -3,4 +3,5 @@ pdfplumber
 python-dotenv
 rapidfuzz
 streamlit
+plotly
 pytest
