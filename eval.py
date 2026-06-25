@@ -19,6 +19,8 @@ import time
 
 # force mock mode for eval so we get deterministic results without burning API credits
 os.environ["MOCK_GROK"] = "true"
+# disable payment failure simulation — eval tests pipeline logic, not payment failure handling
+os.environ["PAYMENT_FAIL_RATE"] = "0"
 
 from main import run_batch
 from state import InvoiceState
