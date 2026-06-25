@@ -171,11 +171,11 @@ GROUND_TRUTH = [
     },
     {
         "invoice_number": "INV-1016",
-        "expected_decision": "rejected",
-        "hard": True,
-        "acceptable": ["rejected"],
+        "expected_decision": "human_review",
+        "hard": False,
+        "acceptable": ["rejected", "human_review"],
         "expected_flags": ["out_of_stock"],
-        "note": "WidgetC exists but zero stock",
+        "note": "WidgetC exists but zero stock. Reject is valid, but human_review is also correct — AP team may want to arrange backorder or partial payment rather than outright rejection.",
     },
     {
         "invoice_number": "INV-1017",

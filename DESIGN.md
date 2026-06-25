@@ -194,6 +194,9 @@ The minimum schema merges item existence and stock levels into one table. Separa
 **Why 15% price tolerance**
 Hard price matching rejects legitimate invoices. rush orders run at a markup, volume orders come with discounts. 15% captures both without letting through significant price gouging. Anything over the threshold doesn't auto-reject; it gets flagged and Grok reasons about it in approval.
 
+**Tax handling**
+Grok extracts the stated total (including tax) and the line items (pre-tax). Tax is not extracted as a separate line item or stored on InvoiceState. The cross-check between stated total and line item sum flags a mismatch if the gap exceeds 20%, which catches most extraction errors but would also flag high-VAT invoices (>20% tax rates). For standard US tax rates (5-10%) the gap falls within tolerance and passes without a flag. In production, you'd want to extract tax_rate, tax_amount, and subtotal as explicit fields so the audit trail shows the tax breakdown and validation can verify the math. That's a known gap in the prototype.
+
 **Cold start behavior and warm-up**
 On a fresh database every vendor has zero invoice history, so the approval agent applies the most conservative threshold to all of them. Approved vendors with no history get the standard $10K threshold. This produces a larger-than-usual human review queue on first use.
 
