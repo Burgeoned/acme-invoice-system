@@ -28,6 +28,7 @@ HIGH_VALUE_THRESHOLD = 10000
 DB_PATH = "inventory.db"
 
 _ssl_verify = os.getenv("SSL_VERIFY", "true").lower() != "false"
+GROK_MODEL = os.getenv("GROK_MODEL", "grok-3")
 client = OpenAI(
     api_key=_api_key,
     base_url="https://api.x.ai/v1",
@@ -330,7 +331,7 @@ Payment terms: {_xe(state.payment_terms or "not specified")}{vendor_context}
     for round_num in range(MAX_TOOL_ROUNDS):
         try:
             response = client.chat.completions.create(
-                model="grok-3",
+                model=GROK_MODEL,
                 messages=messages,
                 tools=APPROVAL_TOOLS if not simple_case else None,
                 tool_choice="auto" if not simple_case else None,
@@ -356,7 +357,7 @@ Payment terms: {_xe(state.payment_terms or "not specified")}{vendor_context}
                 state.add_error(f"Grok returned empty response on round {round_num + 1}, retrying once")
                 try:
                     retry_resp = client.chat.completions.create(
-                        model="grok-3",
+                        model=GROK_MODEL,
                         messages=messages,
                         tools=APPROVAL_TOOLS if not simple_case else None,
                         tool_choice="auto" if not simple_case else None,
@@ -451,7 +452,7 @@ Payment terms: {_xe(state.payment_terms or "not specified")}{vendor_context}
 
     try:
         critique_response = client.chat.completions.create(
-            model="grok-3",
+            model=GROK_MODEL,
             messages=[{"role": "user", "content": critique_prompt}],
             temperature=0,
         )

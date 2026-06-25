@@ -20,6 +20,7 @@ MOCK_GROK = (
 )
 
 _ssl_verify = os.getenv("SSL_VERIFY", "true").lower() != "false"
+GROK_MODEL = os.getenv("GROK_MODEL", "grok-3")
 client = OpenAI(
     api_key=_api_key,
     base_url="https://api.x.ai/v1",
@@ -31,6 +32,7 @@ Extract structured data from the invoice text below and return valid JSON only, 
 
 Normalize item names: remove extra spaces and fix common OCR artifacts.
 For example "Widget A" -> "WidgetA", "Gadget X" -> "GadgetX", "2O26" -> "2026".
+If a line item is a rush order or expedited version of a known item (e.g. "WidgetA (rush order)", "WidgetA-rush", "WidgetA(rushorder)"), normalize it to the base item name ("WidgetA") and reflect any price markup in the unit_price field. Do not create a separate item name for rush charges — they are the same item at a higher price.
 Preserve invoice numbers exactly as they appear including any prefix like "INV-".
 
 Return this exact structure:
@@ -109,7 +111,7 @@ def read_file(file_path: str) -> str:
 def call_grok(text: str, strict: bool = False) -> dict:
     prompt = STRICT_EXTRACTION_PROMPT if strict else EXTRACTION_PROMPT
     response = client.chat.completions.create(
-        model="grok-3",
+        model=GROK_MODEL,
         messages=[{"role": "user", "content": prompt.format(text=text)}],
         temperature=0,
     )
