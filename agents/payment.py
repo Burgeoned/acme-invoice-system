@@ -80,6 +80,13 @@ def run(state: InvoiceState):
         write_audit_log(state)
         return
 
+    # block payment on nonsensical amounts regardless of approval decision
+    if state.total_amount is not None and state.total_amount <= 0:
+        state.add_error(f"Blocked payment: invoice total is {state.total_amount}, must be positive")
+        state.payment_status = "blocked"
+        write_audit_log(state)
+        return
+
     if state.decision != "approved":
         # rejected or human_review — log and record so cross-session duplicate detection catches it
         state.payment_status = "skipped"

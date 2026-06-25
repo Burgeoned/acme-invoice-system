@@ -496,3 +496,16 @@ class TestPaymentFailures:
 
         assert state.payment_status == "blocked"
         assert state.payment_result is None
+
+    def test_negative_amount_invoice_is_blocked(self, db_path, monkeypatch):
+        """Negative or zero total must be blocked at the payment stage regardless of approval."""
+        monkeypatch.setattr("agents.payment.DB_PATH", db_path)
+        from agents import payment
+        state = make_state(vendor="unknown", items=[("WidgetA", -1, 250)], total=-250)
+        state.decision = "approved"  # even if somehow approved, payment must block
+
+        payment.run(state)
+
+        assert state.payment_status == "blocked"
+        assert state.payment_result is None
+        assert any("Blocked payment" in e for e in state.errors)

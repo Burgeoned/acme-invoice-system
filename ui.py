@@ -477,7 +477,12 @@ def show_handled_row(state: InvoiceState, row_idx: int, all_handled: list = None
     amount = f"${state.total_amount:,.2f}" if state.total_amount is not None else "-"
     invoice_id = state.invoice_number or os.path.basename(state.file_path)
     key = f"handled_detail_{row_idx}"
-    can_override = state.decision == "rejected"
+    # don't offer Override for hard-reject cases — negative amounts, bad actors,
+    # and data integrity failures should never be manually approved
+    hard_reject_flag_types = {"bad_actor", "negative_quantity", "negative_total", "missing_total"}
+    has_hard_reject_flag = any(f.type in hard_reject_flag_types for f in state.flags)
+    non_positive_amount = (state.total_amount is not None and state.total_amount <= 0)
+    can_override = state.decision == "rejected" and not has_hard_reject_flag and not non_positive_amount
 
     # if multiple invoices share the same number (original + revised), show filename to distinguish
     filename = os.path.basename(state.file_path)
