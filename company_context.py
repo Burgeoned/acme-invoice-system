@@ -34,8 +34,9 @@ Rush Orders:
 - Markups over 20% require justification even on approved vendors.
 
 New Vendors:
+- A "new vendor" means a vendor NOT on the approved list. Vendors on the approved list are established relationships vetted by procurement — do not treat them as new vendors even if there is no prior invoice history in the system.
 - Any vendor not on the approved list requires procurement sign-off before payment.
-- First invoices from new vendors should be treated as higher risk regardless of amount.
+- First invoices from vendors NOT on the approved list should be treated as higher risk regardless of amount.
 
 Fraud Signals:
 - "Wire transfer" or "urgent payment" language in invoice notes is a red flag.

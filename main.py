@@ -89,8 +89,14 @@ def run_batch(archive: bool = True) -> list[InvoiceState]:
             discarded.extend(f for f in group if f != chosen)
 
     # newest first so revised invoices process before originals and win the duplicate check
-    # filename is the tiebreaker so the order is deterministic when mtimes match
-    files.sort(key=lambda f: (-os.path.getmtime(f), os.path.basename(f)))
+    # tiebreaker: "revised" files beat originals, then reverse alphabetical so longer names
+    # (typically more specific versions) win — handles git restore flattening all mtimes
+    def _sort_key(f):
+        name = os.path.basename(f).lower()
+        is_revision = "revised" in name or "revision" in name or "rev" in name
+        return (-os.path.getmtime(f), not is_revision, name)
+
+    files.sort(key=_sort_key)
 
     if not files:
         print(f"No supported invoice files found in {INVOICE_DIR}")
