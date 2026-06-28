@@ -112,7 +112,7 @@ def call_grok(text: str, strict: bool = False) -> dict:
     prompt = STRICT_EXTRACTION_PROMPT if strict else EXTRACTION_PROMPT
     response = client.chat.completions.create(
         model=GROK_MODEL,
-        messages=[{"role": "user", "content": prompt.format(text=text)}],
+        messages=[{"role": "user", "content": prompt.replace("{text}", text)}],
         temperature=0,
     )
     raw = response.choices[0].message.content.strip()

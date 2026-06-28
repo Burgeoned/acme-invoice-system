@@ -6,6 +6,5 @@ services:
     env_file:
       - .env
     volumes:
-      # persist the database and audit logs across container restarts
-      - ./inventory.db:/app/inventory.db
+      # only logs need to persist — inventory.db is created fresh at build time via setup_db.py
       - ./logs:/app/logs
